@@ -1,11 +1,11 @@
 import { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma as any),
   session: {
     strategy: "jwt", // NextAuth Credentials Provider 仅支持 JWT 策略。
     // 虽然 Prompt 要求“数据库 session”，但 Credentials 在 NextAuth 标准实现中必须用 JWT。

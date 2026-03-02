@@ -2,11 +2,13 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
 }
 
 // User model for NextAuth
@@ -21,9 +23,77 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
+  accounts       Account[]
+  sessions       Session[]
+  knowledgeBases KnowledgeBase[]
+  documents      Document[]
+  chunks         Chunk[]
 }
+
+// --- 业务模型开始 ---
+
+model KnowledgeBase {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents Document[]
+  chunks    Chunk[]
+
+  @@index([userId])
+}
+
+model Document {
+  id           String    @id @default(cuid())
+  filename     String
+  storagePath  String    // 存储路径（Supabase Storage 或 本地）
+  mime         String    @default("application/pdf")
+  status       String    @default("uploaded") // uploaded, processing, ready, error
+  error        String?
+  kbId         String
+  userId       String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  indexedAt    DateTime?
+
+  knowledgeBase KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks        Chunk[]
+
+  @@index([kbId])
+  @@index([userId])
+}
+
+model Chunk {
+  id          String   @id @default(cuid())
+  content     String   @db.Text
+  contentHash String?  // 用于去重(可选)
+  pageStart   Int
+  pageEnd     Int
+  
+  // Vector 字段：手动指定 vector(256)
+  // 虽然 Prisma 目前通过 Unsupported 支持，但我们需要在迁移后手动处理或使用 Raw SQL
+  embedding   Unsupported("vector(256)")?
+
+  kbId        String
+  docId       String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  knowledgeBase KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  document      Document      @relation(fields: [docId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([kbId])
+  @@index([docId])
+  @@index([userId])
+}
+
+// --- 业务模型结束 ---
 
 model Account {
   id                 String  @id @default(cuid())
