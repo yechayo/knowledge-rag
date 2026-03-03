@@ -73,7 +73,7 @@ export async function chat(messages: Message[], model: string = 'glm-4-flash'): 
  */
 export function buildRAGPrompt(query: string, contexts: Array<{ content: string; pageStart: number; pageEnd: number; docName?: string }>): Message[] {
   const contextText = contexts
-    .map((c, idx) => `[文档片段 ${idx + 1}，来源: ${c.docName || '未知文档'}，页码 ${c.pageStart}-${c.pageEnd}]\n${c.content}`)
+    .map((c, idx) => `[${idx + 1}] 来源: ${c.docName || '未知文档'}，页码 ${c.pageStart}-${c.pageEnd}\n${c.content}`)
     .join('\n\n---\n\n');
 
   return [
@@ -86,6 +86,8 @@ export function buildRAGPrompt(query: string, contexts: Array<{ content: string;
 2. 如果文档中没有相关信息，请明确告知
 3. 回答时请注明引用的文件名和页码
 4. 保持简洁准确
+5. 在回答最后一行必须输出引用编号，格式严格为：SOURCES: 1,3
+6. 如果没有使用任何片段，最后一行输出：SOURCES: none
 
 检索到的文档片段：
 ${contextText}`,

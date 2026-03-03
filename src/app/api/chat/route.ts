@@ -19,6 +19,25 @@ interface Source {
   score: number;
 }
 
+function parseUsedSourceIndexes(answer: string, max: number): number[] {
+  const sourceLineMatch = answer.match(/SOURCES\s*[:：]\s*([^\n\r]+)/i);
+  if (!sourceLineMatch) return [];
+
+  const raw = sourceLineMatch[1].trim();
+  if (!raw || /none|无|没有/i.test(raw)) return [];
+
+  const numbers = raw
+    .split(/[,，\s]+/)
+    .map((part) => Number.parseInt(part, 10))
+    .filter((num) => Number.isInteger(num) && num >= 1 && num <= max);
+
+  return Array.from(new Set(numbers));
+}
+
+function cleanAnswerText(answer: string): string {
+  return answer.replace(/\n?SOURCES\s*[:：]\s*[^\n\r]*/gi, '').trim();
+}
+
 /**
  * POST /api/chat - RAG 聊天接口
  *
@@ -132,12 +151,15 @@ export async function POST(req: Request) {
       { role: 'user', content: ragPrompt[1].content }, // current query
     ];
 
-    const answer = await chat(chatMessages);
+    const rawAnswer = await chat(chatMessages);
+    const usedIndexes = parseUsedSourceIndexes(rawAnswer, sources.length);
+    const answer = cleanAnswerText(rawAnswer);
+    const usedSources = usedIndexes.map((idx) => sources[idx - 1]).filter(Boolean);
 
     // 7. 返回结果
     return NextResponse.json({
       answer,
-      sources: sources.map((s: Source) => ({
+      sources: usedSources.map((s: Source) => ({
         chunkId: s.chunkId,
         docId: s.docId,
         docName: s.docName,
