@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     }
 
     // 1. 权限校验
-    const kb = await prisma.knowledgeBase.findUnique({
+    const kb = await prisma.knowledgeBase.findFirst({
       where: {
         id: kbId,
         userId: session.user.id,

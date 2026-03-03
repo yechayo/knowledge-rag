@@ -42,7 +42,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError("邮箱或密码错误");
       } else {
-        router.push("/dashboard"); // Redirect to dashboard or home
+        router.push("/"); // 登录成功后跳转首页
         router.refresh();
       }
     } catch (err) {

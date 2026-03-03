@@ -19,6 +19,7 @@ export const config = {
   matcher: [
     '/kb/:path*',
     '/api/kb/:path*',
+    '/api/documents/:path*',
     '/api/chat/:path*',
   ],
 };
