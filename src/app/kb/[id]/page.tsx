@@ -1,14 +1,18 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
+import { marked } from 'marked';
+import DOMPurify from 'isomorphic-dompurify';
+import TurndownService from 'turndown';
 import TopBar from '@/components/layout/TopBar';
 
 interface Document {
   id: string;
   filename: string;
   status: string;
+  mime?: string;
   createdAt: string;
 }
 
@@ -19,12 +23,24 @@ interface ParsedContent {
     status: string;
   };
   parseResult: {
-    totalPages: number;
+    type?: 'pdf' | 'markdown';
+    totalPages?: number;
     fullText: string;
-    pages: Array<{
+    pages?: Array<{
       pageNumber: number;
       text: string;
     }>;
+    sections?: Array<{
+      level: number;
+      title: string;
+      htmlContent: string;
+      lineNumber: number;
+    }>;
+    metadata?: {
+      headings: string[];
+      codeBlocks: number;
+      totalLines: number;
+    };
   };
   chunks: Array<{
     id: number;
@@ -54,6 +70,7 @@ interface ChatMessage {
 }
 
 export default function KBDetailPage() {
+  const defaultNewDocFilename = '未命名文档.md';
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
   const params = useParams();
@@ -72,6 +89,14 @@ export default function KBDetailPage() {
   const [indexingDocId, setIndexingDocId] = useState<string | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ docId: string; filename: string } | null>(null);
+
+  // 编辑模式相关状态
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editorInitialHtml, setEditorInitialHtml] = useState('');
+  const [editorTextLength, setEditorTextLength] = useState(0);
+  const [newDocFilename, setNewDocFilename] = useState(defaultNewDocFilename);
+  const [saving, setSaving] = useState(false);
+  const richEditorRef = useRef<HTMLDivElement>(null);
 
   // 聊天相关状态
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -98,6 +123,10 @@ export default function KBDetailPage() {
 
   // 获取文档解析内容
   const fetchDocumentContent = useCallback(async (docId: string) => {
+    if (!docId || docId === 'new') {
+      return;
+    }
+
     setLoadingContent(true);
     setParsedContent(null);
     setContentError(null);
@@ -132,8 +161,10 @@ export default function KBDetailPage() {
 
   // 当选择的文档变化时，获取内容
   useEffect(() => {
-    if (selectedDocId) {
+    if (selectedDocId && selectedDocId !== 'new') {
       fetchDocumentContent(selectedDocId);
+    } else if (selectedDocId === 'new') {
+      setContentError(null);
     } else {
       setParsedContent(null);
       setContentError(null);
@@ -155,6 +186,29 @@ export default function KBDetailPage() {
       return () => clearInterval(timer);
     }
   }, [documents, fetchDocuments]);
+
+  const markdownToEditorHtml = useCallback((markdown: string) => {
+    const parsed = marked.parse(markdown || '') as string;
+    return DOMPurify.sanitize(parsed);
+  }, []);
+
+  const runEditorCommand = (command: string, value?: string) => {
+    if (!isEditMode) return;
+    richEditorRef.current?.focus();
+    document.execCommand(command, false, value);
+  };
+
+  const handleEditorLink = () => {
+    const url = window.prompt('请输入链接地址');
+    if (!url) return;
+    runEditorCommand('createLink', url);
+  };
+
+  useEffect(() => {
+    if (!isEditMode || !richEditorRef.current) return;
+    richEditorRef.current.innerHTML = editorInitialHtml || '<p><br></p>';
+    setEditorTextLength(richEditorRef.current.innerText.length);
+  }, [editorInitialHtml, isEditMode, selectedDocId]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -240,6 +294,109 @@ export default function KBDetailPage() {
     setDeleteConfirm({ docId, filename });
   };
 
+  // 处理新建文档
+  const handleNewDocument = () => {
+    const initialMarkdown = '# 新建文档\n\n开始编写你的内容...\n';
+    setSelectedDocId('new');
+    setIsEditMode(true);
+    setNewDocFilename(defaultNewDocFilename);
+    setEditorInitialHtml(markdownToEditorHtml(initialMarkdown));
+    setEditorTextLength(initialMarkdown.length);
+    setParsedContent({
+      document: { id: 'new', filename: defaultNewDocFilename, status: 'uploaded' },
+      parseResult: { type: 'markdown' as const, fullText: '' },
+      chunks: [],
+      stats: { totalCharacters: 0, totalChunks: 0, avgChunkSize: 0 },
+    });
+    setIsMenuOpen(false);
+  };
+
+  // 进入编辑模式
+  const handleEdit = () => {
+    if (parsedContent?.parseResult.type === 'markdown') {
+      const markdownText = parsedContent.parseResult.fullText;
+      setEditorInitialHtml(markdownToEditorHtml(markdownText));
+      setEditorTextLength(markdownText.length);
+      setIsEditMode(true);
+    }
+  };
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditorInitialHtml('');
+    setEditorTextLength(0);
+    if (selectedDocId === 'new') {
+      setNewDocFilename(defaultNewDocFilename);
+      setSelectedDocId(null);
+      setParsedContent(null);
+    }
+  };
+
+  // 保存编辑
+  const handleSaveEdit = async () => {
+    const currentEditorHtml = richEditorRef.current?.innerHTML || editorInitialHtml || '<p><br></p>';
+    const turndownService = new TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+      bulletListMarker: '-',
+    });
+    const markdownContent = turndownService.turndown(currentEditorHtml);
+
+    setSaving(true);
+    try {
+      if (selectedDocId === 'new') {
+        const sanitizedFilename = (newDocFilename.trim() || defaultNewDocFilename).endsWith('.md')
+          ? (newDocFilename.trim() || defaultNewDocFilename)
+          : `${newDocFilename.trim() || defaultNewDocFilename}.md`;
+
+        // 新建文档
+        const res = await fetch('/api/documents/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: sanitizedFilename,
+            content: markdownContent,
+            kbId,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setSelectedDocId(data.document.id);
+          setIsEditMode(false);
+          setEditorInitialHtml('');
+          setEditorTextLength(0);
+          setNewDocFilename(defaultNewDocFilename);
+          fetchDocuments();
+        } else {
+          alert('保存失败');
+        }
+      } else {
+        // 更新现有文档
+        const res = await fetch(`/api/documents/${selectedDocId}/update`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: markdownContent }),
+        });
+
+        if (res.ok) {
+          setIsEditMode(false);
+          setEditorInitialHtml('');
+          setEditorTextLength(0);
+          if (selectedDocId) fetchDocumentContent(selectedDocId);
+        } else {
+          alert('保存失败');
+        }
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      alert('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // 发送聊天消息
   const handleSendChat = async () => {
     const trimmed = chatInput.trim();
@@ -289,7 +446,18 @@ export default function KBDetailPage() {
     return <div className="min-h-screen bg-white flex items-center justify-center font-bold text-blue-600 animate-pulse">加载中...</div>;
   }
 
-  const selectedDoc = documents.find((d) => d.id === selectedDocId) || null;
+  const isCreatingNewDocument = selectedDocId === 'new' && isEditMode;
+  const draftDocument: Document = {
+    id: 'new',
+    filename: newDocFilename || defaultNewDocFilename,
+    status: 'uploaded',
+    mime: 'text/markdown',
+    createdAt: new Date().toISOString(),
+  };
+  const displayDocuments = isCreatingNewDocument ? [draftDocument, ...documents] : documents;
+  const selectedDoc = isCreatingNewDocument
+    ? draftDocument
+    : documents.find((d) => d.id === selectedDocId) || null;
 
   return (
     <div className="h-screen flex flex-col bg-white overflow-hidden">
@@ -330,17 +498,24 @@ export default function KBDetailPage() {
                           <div className="absolute left-full top-0 -mt-1 ml-0.5 w-40 bg-white rounded shadow-xl border border-gray-100 py-1">
                             <label className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-600 hover:text-white cursor-pointer">
                               <span>PDF 上传</span>
-                              <input type="file" accept=".pdf" className="hidden" onChange={(e) => { handleUpload(e); setIsMenuOpen(false); }} />
+                              <input type="file" accept=".pdf" className="hidden" onChange={(e) => { handleUpload(e); setIsMenuOpen(false); setIsUploadSubMenuOpen(false); }} />
+                            </label>
+                            <label className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-600 hover:text-white cursor-pointer">
+                              <span>Markdown 上传</span>
+                              <input type="file" accept=".md,.markdown" className="hidden" onChange={(e) => { handleUpload(e); setIsMenuOpen(false); setIsUploadSubMenuOpen(false); }} />
                             </label>
                             <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-600 hover:text-white">
                               Word 上传 (预留)
                             </button>
-                            <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-600 hover:text-white">
-                              TXT 上传 (预留)
-                            </button>
                           </div>
                         )}
                       </div>
+                      <button
+                        onClick={handleNewDocument}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-600 hover:text-white"
+                      >
+                        新建文档
+                      </button>
                       <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-600 hover:text-white">
                         新建文件夹 (预留)
                       </button>
@@ -351,14 +526,14 @@ export default function KBDetailPage() {
                   )}
                 </div>
               </div>
-              <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-bold">{documents.length}</span>
+              <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-bold">{displayDocuments.length}</span>
             </div>
             
             <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-              {documents.length === 0 ? (
+              {displayDocuments.length === 0 ? (
                 <div className="p-8 text-center text-gray-400 text-sm font-medium">暂无文档</div>
               ) : (
-                documents.map((doc) => {
+                displayDocuments.map((doc) => {
                   // 索引状态配置
                   const indexStatus = {
                     ready: {
@@ -442,6 +617,7 @@ export default function KBDetailPage() {
 
                       {/* 浮动操作按钮区：仅在 Hover 时平滑滑入 */}
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 translate-x-4 group-hover/item:opacity-100 group-hover/item:translate-x-0 transition-all duration-300 pointer-events-none group-hover/item:pointer-events-auto">
+                        {doc.id !== 'new' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -459,6 +635,7 @@ export default function KBDetailPage() {
                             </svg>
                           )}
                         </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -481,7 +658,7 @@ export default function KBDetailPage() {
                     {selectedDoc ? selectedDoc.filename : kbName || '未选择文档'}
                   </h3>
                 </div>
-                {selectedDoc && (
+                {selectedDoc && selectedDoc.id !== 'new' && (
                   <div className="flex items-center gap-3">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                       selectedDoc.status === 'ready' ? 'bg-green-100 text-green-700' :
@@ -490,12 +667,20 @@ export default function KBDetailPage() {
                     }`}>
                       {selectedDoc.status}
                     </span>
+                    {selectedDoc.mime === 'text/markdown' && !isEditMode && (
+                      <button
+                        onClick={handleEdit}
+                        className="text-[10px] font-bold px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded transition-colors"
+                      >
+                        编辑
+                      </button>
+                    )}
                     <button
                       onClick={() => selectedDoc && handleStartIndex(selectedDoc.id)}
                       disabled={indexingDocId === selectedDoc.id || selectedDoc.status === 'processing'}
                       className={`text-[10px] font-bold px-3 py-1.5 transition-colors flex items-center gap-1.5 ${
                         indexingDocId === selectedDoc.id || selectedDoc.status === 'processing'
-                        ? 'bg-gray-400 cursor-not-allowed text-white' 
+                        ? 'bg-gray-400 cursor-not-allowed text-white'
                         : 'bg-gray-900 text-white hover:bg-black'
                       }`}
                     >
@@ -514,11 +699,11 @@ export default function KBDetailPage() {
 
               <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
                 {/* 文档内容区域 */}
-                <div className="flex-1 overflow-y-auto p-8">
-                {selectedDoc ? (
-                  <div className="max-w-4xl mx-auto">
-                    {/* 文档统计信息 */}
-                    <div className="flex items-center gap-4 mb-6 pb-4 border-b border-gray-100 text-xs text-gray-500">
+                <div className={`flex-1 ${isEditMode ? 'flex flex-col overflow-hidden' : 'overflow-y-auto p-8'}`}>
+                  {selectedDoc && (
+                    <div className={isEditMode ? 'flex-1 flex flex-col w-full h-full overflow-hidden' : 'max-w-4xl mx-auto'}>
+                      {/* 文档统计信息 */}
+                    <div className={`flex items-center gap-4 border-b border-gray-100 text-xs text-gray-500 flex-shrink-0 ${isEditMode ? 'px-6 py-2 mb-0 bg-white' : 'mb-6 pb-4'}`}>
                       <span className="font-mono">ID: {selectedDoc.id.slice(0, 8)}...</span>
                       <span>|</span>
                       <span>创建: {new Date(selectedDoc.createdAt).toLocaleString()}</span>
@@ -544,73 +729,188 @@ export default function KBDetailPage() {
                     {loadingContent && (
                       <div className="flex items-center justify-center py-12">
                         <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
-                        <span className="ml-3 text-gray-500 font-medium">正在解析 PDF...</span>
+                        <span className="ml-3 text-gray-500 font-medium">正在解析文档...</span>
                       </div>
                     )}
 
-                    {/* 解析内容展示 */}
-                    {parsedContent && !loadingContent && (
-                      <div className="space-y-6">
-                        {/* 按页展示内容 */}
-                        {parsedContent.parseResult.pages.map((page) => (
-                          <div key={page.pageNumber} className="border border-gray-100 rounded-lg overflow-hidden">
-                            <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 flex items-center justify-between">
-                              <span className="text-xs font-bold text-gray-600">第 {page.pageNumber} 页</span>
-                              <span className="text-[10px] text-gray-400">{page.text.length} 字符</span>
+                    {/* 内容区域：编辑或预览 */}
+                    {parsedContent && !loadingContent ? (
+                      <>
+                        {/* 编辑模式 */}
+                        {isEditMode && parsedContent.parseResult.type === 'markdown' ? (
+                          <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                            {selectedDocId === 'new' && (
+                              <div className="px-6 py-3 border-b border-gray-200 bg-white flex items-center gap-3">
+                                <span className="text-xs font-bold text-gray-500 whitespace-nowrap">文件名</span>
+                                <input
+                                  type="text"
+                                  value={newDocFilename}
+                                  onChange={(e) => setNewDocFilename(e.target.value)}
+                                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                                  placeholder="请输入文件名（支持 .md）"
+                                />
+                              </div>
+                            )}
+                            <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center gap-1">
+                              <button onClick={() => runEditorCommand('bold')} className="px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-200 rounded">B</button>
+                              <button onClick={() => runEditorCommand('italic')} className="px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-200 rounded">I</button>
+                              <button onClick={() => runEditorCommand('underline')} className="px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-200 rounded">U</button>
+                              <span className="mx-1 h-4 w-px bg-gray-300" />
+                              <button onClick={() => runEditorCommand('formatBlock', 'H1')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">H1</button>
+                              <button onClick={() => runEditorCommand('formatBlock', 'H2')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">H2</button>
+                              <button onClick={() => runEditorCommand('formatBlock', 'P')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">正文</button>
+                              <span className="mx-1 h-4 w-px bg-gray-300" />
+                              <button onClick={() => runEditorCommand('insertUnorderedList')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">• 列表</button>
+                              <button onClick={() => runEditorCommand('insertOrderedList')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">1. 列表</button>
+                              <button onClick={() => runEditorCommand('formatBlock', 'BLOCKQUOTE')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">引用</button>
+                              <span className="mx-1 h-4 w-px bg-gray-300" />
+                              <button onClick={handleEditorLink} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">链接</button>
+                              <button onClick={() => runEditorCommand('undo')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">撤销</button>
+                              <button onClick={() => runEditorCommand('redo')} className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 rounded">重做</button>
                             </div>
-                            <div className="p-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-serif">
-                              {page.text || <span className="text-gray-400 italic">（此页无文本内容）</span>}
+                            <div className="flex-1 overflow-y-auto border-b border-gray-200 bg-white p-6">
+                              <div
+                                ref={richEditorRef}
+                                contentEditable
+                                suppressContentEditableWarning
+                                onInput={(e) => setEditorTextLength((e.currentTarget as HTMLDivElement).innerText.length)}
+                                className="min-h-full outline-none prose prose-sm max-w-none text-gray-800 markdown-content"
+                              />
+                            </div>
+                            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+                              <span className="text-xs text-gray-500 font-mono">{editorTextLength} 字符</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleCancelEdit}
+                                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  onClick={handleSaveEdit}
+                                  disabled={saving}
+                                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                  {saving ? '保存中...' : '保存'}
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        ))}
-
-                        {/* Chunks 预览 */}
-                        {parsedContent.chunks.length > 0 && (
-                          <div className="mt-8 pt-6 border-t border-gray-200">
-                            <h4 className="text-sm font-bold text-gray-800 mb-4">
-                              Chunks 预览（共 {parsedContent.chunks.length} 个分块）
-                            </h4>
-                            <div className="space-y-3">
-                              {parsedContent.chunks.slice(0, 5).map((chunk) => (
-                                <div key={chunk.id} className="bg-gray-50 rounded p-3 border border-gray-100">
-                                  <div className="flex items-center justify-between mb-2 text-[10px]">
-                                    <span className="font-bold text-gray-500">Chunk #{chunk.id}</span>
-                                    <span className="text-gray-400">页码: {chunk.pageStart} | {chunk.length} 字符</span>
-                                  </div>
-                                  <p className="text-xs text-gray-600 line-clamp-3">
-                                    {chunk.content}
-                                  </p>
+                        ) : (
+                          <div className="space-y-6">
+                            {/* Markdown 内容渲染 */}
+                            {parsedContent.parseResult.type === 'markdown' ? (
+                              <>
+                                <div className="prose prose-sm max-w-none">
+                                  {parsedContent.parseResult.sections?.map((section) => (
+                                    <div key={section.lineNumber} className="mb-6">
+                                      {section.level === 1 && (
+                                        <h1 className="text-2xl font-bold mb-3 text-gray-900">{section.title}</h1>
+                                      )}
+                                      {section.level === 2 && (
+                                        <h2 className="text-xl font-bold mb-2 text-gray-800">{section.title}</h2>
+                                      )}
+                                      {section.level === 3 && (
+                                        <h3 className="text-lg font-bold mb-2 text-gray-800">{section.title}</h3>
+                                      )}
+                                      {section.level === 4 && (
+                                        <h4 className="text-base font-bold mb-1 text-gray-700">{section.title}</h4>
+                                      )}
+                                      {section.level === 5 && (
+                                        <h5 className="text-sm font-bold mb-1 text-gray-700">{section.title}</h5>
+                                      )}
+                                      {section.level === 6 && (
+                                        <h6 className="text-xs font-bold mb-1 text-gray-600">{section.title}</h6>
+                                      )}
+                                      <div
+                                        className="text-sm text-gray-700 leading-relaxed markdown-content"
+                                        dangerouslySetInnerHTML={{ __html: section.htmlContent }}
+                                      />
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                              {parsedContent.chunks.length > 5 && (
-                                <p className="text-xs text-gray-400 text-center py-2">
-                                  ... 还有 {parsedContent.chunks.length - 5} 个 chunks
-                                </p>
-                              )}
-                            </div>
+
+                                {/* 元数据统计 */}
+                                {parsedContent.parseResult.metadata && (
+                                  <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
+                                    <span>{parsedContent.parseResult.metadata.headings.length} 个章节</span>
+                                    <span className="mx-2">|</span>
+                                    <span>{parsedContent.parseResult.metadata.codeBlocks} 个代码块</span>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {/* 按页展示 PDF 内容 */}
+                                {parsedContent.parseResult.pages?.map((page) => (
+                                  <div key={page.pageNumber} className="border border-gray-100 rounded-lg overflow-hidden">
+                                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+                                      <span className="text-xs font-bold text-gray-600">第 {page.pageNumber} 页</span>
+                                      <span className="text-[10px] text-gray-400">{page.text.length} 字符</span>
+                                    </div>
+                                    <div className="p-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-serif">
+                                      {page.text || <span className="text-gray-400 italic">（此页无文本内容）</span>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </>
+                            )}
+
+                            {/* Chunks 预览 */}
+                            {parsedContent.chunks.length > 0 && (
+                              <div className="mt-8 pt-6 border-t border-gray-200">
+                                <h4 className="text-sm font-bold text-gray-800 mb-4">
+                                  Chunks 预览（共 {parsedContent.chunks.length} 个分块）
+                                </h4>
+                                <div className="space-y-3">
+                                  {parsedContent.chunks.slice(0, 5).map((chunk) => (
+                                    <div key={chunk.id} className="bg-gray-50 rounded p-3 border border-gray-100">
+                                      <div className="flex items-center justify-between mb-2 text-[10px]">
+                                        <span className="font-bold text-gray-500">Chunk #{chunk.id}</span>
+                                        <span className="text-gray-400">页码: {chunk.pageStart} | {chunk.length} 字符</span>
+                                      </div>
+                                      <p className="text-xs text-gray-600 line-clamp-3">
+                                        {chunk.content}
+                                      </p>
+                                    </div>
+                                  ))}
+                                  {parsedContent.chunks.length > 5 && (
+                                    <p className="text-xs text-gray-400 text-center py-2">
+                                      ... 还有 {parsedContent.chunks.length - 5} 个 chunks
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    )}
+                      </>
+                    ) : (
+                      // 没有选择文档或解析失败
+                      <>
+                        {/* 解析失败 */}
+                        {!loadingContent && !parsedContent && selectedDocId && (
+                          <div className="p-12 border-2 border-dashed border-gray-100 text-center rounded-sm">
+                            <p className="font-medium text-gray-400">无法解析此文档</p>
+                            <p className="text-[10px] mt-1 text-gray-400 break-all">
+                              {contentError || '请确保文件是有效的格式'}
+                            </p>
+                          </div>
+                        )}
 
-                    {/* 解析失败 */}
-                    {!loadingContent && !parsedContent && (
-                      <div className="p-12 border-2 border-dashed border-gray-100 text-center rounded-sm">
-                        <p className="font-medium text-gray-400">无法解析此文档</p>
-                        <p className="text-[10px] mt-1 text-gray-400 break-all">
-                          {contentError || '请确保文件是有效的 PDF 格式'}
-                        </p>
-                      </div>
+                        {/* 没有选择文档 */}
+                        {!selectedDocId && (
+                          <div className="h-full flex flex-col items-center justify-center text-gray-300">
+                            <svg className="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                            </svg>
+                            <p className="font-medium">请从左侧选择一个文档进行阅读</p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-gray-300">
-                    <svg className="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                    </svg>
-                    <p className="font-medium">请从左侧选择一个文档进行阅读</p>
-                  </div>
-                )}
+                  )}
                 </div>
               </div>
             </div>
@@ -770,7 +1070,7 @@ export default function KBDetailPage() {
               <h3 className="text-lg font-bold text-gray-900">确认删除</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              确定要删除文档 <span className="font-bold text-gray-900">"{deleteConfirm.filename}"</span> 吗？
+              确定要删除文档 <span className="font-bold text-gray-900">&quot;{deleteConfirm.filename}&quot;</span> 吗？
               <br />
               <span className="text-sm text-red-500">此操作将同时删除文件和所有关联的索引数据，且无法恢复。</span>
             </p>

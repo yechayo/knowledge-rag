@@ -34,7 +34,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Knowledge Base not found' }, { status: 404 });
     }
 
-    // 2. 准备存储路径
+    // 2. 文件类型检测
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    let mime = file.type || 'application/octet-stream';
+
+    // 明确设置 Markdown 文件的 mime 类型
+    if (fileExtension === 'md' || fileExtension === 'markdown') {
+      mime = 'text/markdown';
+    }
+
+    // 3. 准备存储路径
     const fileName = `${Date.now()}-${file.name}`;
     const uploadPath = join(process.cwd(), UPLOAD_DIR);
     const filePath = join(uploadPath, fileName);
@@ -52,7 +61,7 @@ export async function POST(req: Request) {
       data: {
         filename: file.name,
         storagePath: filePath, // 保存绝对路径或相对路径
-        mime: file.type || 'application/pdf',
+        mime: mime,
         status: 'uploaded',
         kbId: kbId,
         userId: session.user.id,

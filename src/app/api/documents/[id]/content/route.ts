@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { parsePDF, PDFParseResult } from '@/lib/pdf-parser';
-import { chunkPages, Chunk } from '@/lib/chunker';
+import { parsePDF } from '@/lib/pdf-parser';
+import { chunkPages } from '@/lib/chunker';
 import { stat } from 'fs/promises';
 import { basename, isAbsolute, join, resolve } from 'path';
 import { UPLOAD_DIR } from '@/lib/constants';
@@ -71,11 +71,53 @@ export async function GET(
       });
     }
 
-    // 3. 解析 PDF
-    const parseResult: PDFParseResult = await parsePDF(resolvedPath);
+    // 3. 根据文档类型选择解析器
+    let parseResult;
+    let chunks;
 
-    // 4. 生成 Chunks（预览用，不存库）
-    const chunks: Chunk[] = chunkPages(parseResult.pages);
+    if (document.mime === 'text/markdown') {
+      const { parseMarkdown } = await import('@/lib/md-parser');
+      const mdResult = await parseMarkdown(resolvedPath);
+
+      // Markdown 使用章节分块（复用现有接口结构）
+      chunks = mdResult.sections.map((section) => ({
+        content: section.content,
+        pageStart: section.lineNumber,
+        pageEnd: section.lineNumber + section.content.split('\n').length,
+      }));
+
+      return NextResponse.json({
+        document: {
+          id: document.id,
+          filename: document.filename,
+          status: document.status,
+        },
+        parseResult: {
+          type: 'markdown',
+          sections: mdResult.sections,
+          fullText: mdResult.fullText,
+          metadata: mdResult.metadata,
+        },
+        chunks: chunks.map((c, i) => ({
+          id: i + 1,
+          content: c.content,
+          pageStart: c.pageStart,
+          pageEnd: c.pageEnd,
+          length: c.content.length,
+        })),
+        stats: {
+          totalCharacters: mdResult.fullText.length,
+          totalChunks: chunks.length,
+          avgChunkSize: chunks.length > 0
+            ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length)
+            : 0,
+        },
+      });
+    }
+
+    // 解析 PDF（现有逻辑）
+    parseResult = await parsePDF(resolvedPath);
+    chunks = chunkPages(parseResult.pages);
 
     return NextResponse.json({
       document: {
