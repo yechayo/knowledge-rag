@@ -40,6 +40,19 @@ interface ParsedContent {
   };
 }
 
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: Array<{
+    chunkId: string;
+    docId: string;
+    docName?: string;
+    pageStart: number;
+    pageEnd: number;
+    score: number;
+  }>;
+}
+
 export default function KBDetailPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
@@ -56,6 +69,13 @@ export default function KBDetailPage() {
   const [contentError, setContentError] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUploadSubMenuOpen, setIsUploadSubMenuOpen] = useState(false);
+  const [indexingDocId, setIndexingDocId] = useState<string | null>(null);
+
+  // 聊天相关状态
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const fetchDocuments = useCallback(async () => {
     try {
@@ -162,8 +182,74 @@ export default function KBDetailPage() {
     }
   };
 
-  const handleStartIndex = async () => {
-    alert('索引功能开发中...');
+  const handleStartIndex = async (docId: string) => {
+    if (indexingDocId === docId) return;
+    setIndexingDocId(docId);
+    try {
+      const res = await fetch(`/api/documents/${docId}/index`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        fetchDocuments();
+        // 如果当前选中的是正在索引的文档，自动刷新内容
+        if (selectedDocId === docId) {
+          fetchDocumentContent(docId);
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || '索引启动失败');
+      }
+    } catch (error) {
+      console.error('Index error:', error);
+      alert('网络异常，索引启动失败');
+    } finally {
+      setIndexingDocId(null);
+    }
+  };
+
+  // 发送聊天消息
+  const handleSendChat = async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || chatLoading) return;
+
+    setChatLoading(true);
+    const userMessage: ChatMessage = { role: 'user', content: trimmed };
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput('');
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kbId,
+          messages: [...chatMessages, userMessage],
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setChatMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: data.answer,
+          sources: data.sources || [],
+        }]);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setChatMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: `错误: ${data.error || '未知错误'}`,
+        }]);
+      }
+    } catch (error) {
+      console.error('Chat error:', error);
+      setChatMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: '网络异常，请稍后重试',
+      }]);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   if (authStatus === 'loading' || loading) {
@@ -263,8 +349,8 @@ export default function KBDetailPage() {
           </div>
 
           {/* 右栏：内容内容区域 */}
-          <div className="flex-1 flex flex-col bg-white h-full relative">
-            <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col bg-white h-full relative min-w-0">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-4">
                   <button onClick={() => router.push('/')} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 transition-colors">
@@ -285,17 +371,112 @@ export default function KBDetailPage() {
                     }`}>
                       {selectedDoc.status}
                     </span>
-                    <button 
-                      onClick={handleStartIndex}
-                      className="text-[10px] font-bold px-3 py-1.5 bg-gray-900 text-white hover:bg-black transition-colors"
+                    <button
+                      onClick={() => selectedDoc && handleStartIndex(selectedDoc.id)}
+                      disabled={indexingDocId === selectedDoc.id || selectedDoc.status === 'processing'}
+                      className={`text-[10px] font-bold px-3 py-1.5 transition-colors flex items-center gap-1.5 ${
+                        indexingDocId === selectedDoc.id || selectedDoc.status === 'processing'
+                        ? 'bg-gray-400 cursor-not-allowed text-white' 
+                        : 'bg-gray-900 text-white hover:bg-black'
+                      }`}
                     >
-                      重新索引
+                      {(indexingDocId === selectedDoc.id || selectedDoc.status === 'processing') ? (
+                        <>
+                          <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>处理中...</span>
+                        </>
+                      ) : (
+                        <span>开始索引</span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setShowChat(!showChat)}
+                      className={`text-[10px] font-bold px-3 py-1.5 transition-colors ${
+                        showChat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      AI 问答
                     </button>
                   </div>
                 )}
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8">
+              <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
+                {/* 聊天面板 */}
+                {showChat && (
+                  <div className="flex-1 flex flex-col border-t border-gray-200 bg-gray-50 min-h-0">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {chatMessages.length === 0 ? (
+                        <div className="text-center text-gray-400 py-8">
+                          <p className="text-sm">向知识库提问，AI 会基于文档内容回答</p>
+                        </div>
+                      ) : (
+                        chatMessages.map((msg, idx) => (
+                          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                              msg.role === 'user'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white border border-gray-200 text-gray-800'
+                            }`}>
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                              {msg.sources && msg.sources.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-gray-100">
+                                  <p className="text-[10px] opacity-70 mb-1 font-bold">参考来源:</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {msg.sources.map((s, sIdx) => (
+                                      <div key={sIdx} className="group relative">
+                                        <span className="inline-block text-[10px] bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded cursor-help">
+                                          {s.docName || 'PDF'} P{s.pageStart}
+                                        </span>
+                                        <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg z-50 whitespace-nowrap">
+                                          {s.docName || '未知文档'} (第 {s.pageStart}-{s.pageEnd} 页)
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      {chatLoading && (
+                        <div className="flex justify-start">
+                          <div className="bg-white border border-gray-200 rounded-lg px-4 py-2">
+                            <div className="flex space-x-2">
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3 bg-white border-t border-gray-200">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSendChat()}
+                          placeholder="输入问题..."
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          disabled={chatLoading}
+                        />
+                        <button
+                          onClick={handleSendChat}
+                          disabled={chatLoading || !chatInput.trim()}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          发送
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 原文档内容区域 */}
+                <div className={`flex-1 overflow-y-auto p-8 ${showChat ? 'hidden' : ''}`}>
                 {selectedDoc ? (
                   <div className="max-w-4xl mx-auto">
                     {/* 文档统计信息 */}
@@ -392,6 +573,7 @@ export default function KBDetailPage() {
                     <p className="font-medium">请从左侧选择一个文档进行阅读</p>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           </div>
