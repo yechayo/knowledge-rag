@@ -53,8 +53,8 @@ export default function RegisterPage() {
       }
 
       router.push("/login?success=Account+created");
-    } catch (err: any) {
-      setError(err.message || "注册发生错误，请重试");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "注册发生错误，请重试");
     } finally {
       setIsLoading(false);
     }
