@@ -1,6 +1,7 @@
 "use client";
 
 import ContentCard from "./ContentCard";
+import AnimatedWrapper from "@/components/ui/AnimatedWrapper";
 
 interface ContentItem {
   id: string;
@@ -28,18 +29,19 @@ export default function ContentGrid({ items, isAdmin = false }: ContentGridProps
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      {items.map((item) => (
-        <ContentCard
-          key={item.id}
-          id={item.id}
-          title={item.title}
-          slug={item.slug}
-          category={item.category}
-          metadata={item.metadata}
-          createdAt={item.createdAt}
-          viewCount={item.viewCount}
-          isAdmin={isAdmin}
-        />
+      {items.map((item, index) => (
+        <AnimatedWrapper key={item.id} index={index}>
+          <ContentCard
+            id={item.id}
+            title={item.title}
+            slug={item.slug}
+            category={item.category}
+            metadata={item.metadata}
+            createdAt={item.createdAt}
+            viewCount={item.viewCount}
+            isAdmin={isAdmin}
+          />
+        </AnimatedWrapper>
       ))}
     </div>
   );

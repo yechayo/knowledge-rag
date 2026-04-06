@@ -3,6 +3,7 @@
 import ProfileWidget from "./ProfileWidget";
 import TocWidget from "./TocWidget";
 import LinksWidget from "./LinksWidget";
+import AnimatedWrapper from "@/components/ui/AnimatedWrapper";
 
 interface SidebarProps {
   body: string;
@@ -24,37 +25,43 @@ export default function Sidebar({ body, category, currentSlug }: SidebarProps) {
     >
       <div className="space-y-6">
         {/* Profile */}
-        <div
-          className="rounded-xl p-4"
-          style={{
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <ProfileWidget />
-        </div>
+        <AnimatedWrapper index={0}>
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <ProfileWidget />
+          </div>
+        </AnimatedWrapper>
 
         {/* TOC */}
-        <div
-          className="rounded-xl p-4"
-          style={{
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <TocWidget body={body} />
-        </div>
+        <AnimatedWrapper index={1}>
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <TocWidget body={body} />
+          </div>
+        </AnimatedWrapper>
 
         {/* Links */}
-        <div
-          className="rounded-xl p-4"
-          style={{
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <LinksWidget category={category} currentSlug={currentSlug} />
-        </div>
+        <AnimatedWrapper index={2}>
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <LinksWidget category={category} currentSlug={currentSlug} />
+          </div>
+        </AnimatedWrapper>
       </div>
     </aside>
   );

@@ -6,6 +6,7 @@ import Link from "next/link";
 import TopNav from "@/components/layout/TopNav";
 import Sidebar from "@/components/detail/Sidebar";
 import ArticleBody from "@/components/detail/ArticleBody";
+import AnimatedWrapper from "@/components/ui/AnimatedWrapper";
 
 interface ContentData {
   id: string;
@@ -164,6 +165,7 @@ export default function DetailPage() {
           {/* Main Content */}
           <main className="flex-1 min-w-0">
             {/* Banner */}
+            <AnimatedWrapper index={0}>
             <div
               className="rounded-2xl p-6 sm:p-8 mb-6"
               style={{
@@ -208,8 +210,10 @@ export default function DetailPage() {
                 <span>{content.viewCount} 次浏览</span>
               </div>
             </div>
+            </AnimatedWrapper>
 
             {/* Article Body */}
+            <AnimatedWrapper index={1}>
             <div
               className="rounded-2xl p-6 sm:p-8"
               style={{
@@ -219,8 +223,10 @@ export default function DetailPage() {
             >
               <ArticleBody content={content.body} />
             </div>
+            </AnimatedWrapper>
 
             {/* Prev / Next Navigation */}
+            <AnimatedWrapper index={2}>
             {(prevArticle || nextArticle) && (
               <div
                 className="mt-6 rounded-2xl p-4 flex gap-4"
@@ -270,6 +276,7 @@ export default function DetailPage() {
                 )}
               </div>
             )}
+            </AnimatedWrapper>
           </main>
         </div>
       </div>
