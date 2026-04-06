@@ -4,7 +4,8 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { marked } from "marked";
 
 interface InlineEditorProps {
   content: string;
@@ -12,7 +13,12 @@ interface InlineEditorProps {
   editable?: boolean;
 }
 
-// Simple HTML to Markdown converter (for saving back)
+// Markdown → HTML (for loading into TipTap)
+function markdownToHtml(md: string): string {
+  return marked(md || "", { breaks: true, gfm: true }) as string;
+}
+
+// HTML → Markdown (for saving back)
 function htmlToBasicMarkdown(html: string): string {
   let md = html;
   // Headings
@@ -20,9 +26,9 @@ function htmlToBasicMarkdown(html: string): string {
   md = md.replace(/<h2[^>]*>(.*?)<\/h2>/gi, "## $1\n\n");
   md = md.replace(/<h3[^>]*>(.*?)<\/h3>/gi, "### $1\n\n");
   md = md.replace(/<h4[^>]*>(.*?)<\/h4>/gi, "#### $1\n\n");
-  // Bold & Italic
-  md = md.replace(/<(strong|b)>(.*?)<\/\1>/gi, "**$1**");
-  md = md.replace(/<(em|i)>(.*?)<\/\1>/gi, "*$1*");
+  // Bold & Italic (use $2 for content, not $1 which is the tag name)
+  md = md.replace(/<(strong|b)>(.*?)<\/(?:strong|b)>/gi, "**$2**");
+  md = md.replace(/<(em|i)>(.*?)<\/(?:em|i)>/gi, "*$2*");
   // Links
   md = md.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, "[$2]($1)");
   // Code blocks
@@ -40,13 +46,19 @@ function htmlToBasicMarkdown(html: string): string {
   md = md.replace(/<br\s*\/?>/gi, "\n");
   // Remaining tags
   md = md.replace(/<[^>]+>/g, "");
+  // Decode HTML entities
+  md = md.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
   // Clean up
   md = md.replace(/\n{3,}/g, "\n\n").trim();
   return md;
 }
 
 export default function InlineEditor({ content, onChange, editable = true }: InlineEditorProps) {
+  // Convert markdown to HTML for TipTap
+  const htmlContent = useMemo(() => markdownToHtml(content), [content]);
+
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4] },
@@ -59,7 +71,7 @@ export default function InlineEditor({ content, onChange, editable = true }: Inl
         placeholder: "开始编辑...",
       }),
     ],
-    content,
+    content: htmlContent,
     editable,
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
@@ -75,13 +87,13 @@ export default function InlineEditor({ content, onChange, editable = true }: Inl
   // Sync external content changes
   useEffect(() => {
     if (editor && !editor.isFocused) {
-      const currentHtml = editor.getHTML();
-      // Only update if content actually changed (compare as plain text)
-      if (currentHtml.replace(/<[^>]+>/g, "").trim() !== content.replace(/<[^>]+>/g, "").trim()) {
-        editor.commands.setContent(content);
+      const currentText = editor.getText().trim();
+      const newText = content.replace(/<[^>]+>/g, "").replace(/[#*_`>\[\]()!\-]/g, "").trim();
+      if (currentText !== newText) {
+        editor.commands.setContent(htmlContent);
       }
     }
-  }, [content, editor]);
+  }, [content, htmlContent, editor]);
 
   if (!editor) return null;
 
