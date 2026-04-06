@@ -2,8 +2,7 @@ import { Pool } from 'pg'
 import { PrismaClient } from '../../node_modules/@prisma/client/.prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
-const connectionString =
-  "postgresql://postgres.fwnmohcptedgefzsumyc:bdQ5y84yDOwjzrqO@aws-1-ap-south-1.pooler.supabase.com:5432/postgres";
+const connectionString = process.env.DATABASE_URL!;
 
 const pool = new Pool({ connectionString })
 const adapter = new PrismaPg(pool)
