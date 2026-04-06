@@ -57,6 +57,23 @@ body {
   * {
     cursor: none !important;
   }
+
+  /* Restore native cursor for editable elements */
+  [contenteditable="true"],
+  [contenteditable="true"] *,
+  input,
+  textarea,
+  select {
+    cursor: text !important;
+  }
+
+  /* Restore cursor for editor area */
+  .inline-editor {
+    cursor: default !important;
+  }
+  .inline-editor .ProseMirror {
+    cursor: text !important;
+  }
 }
 
 /* Restore cursor on mobile */
