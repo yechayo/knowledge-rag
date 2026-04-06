@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
@@ -8,8 +8,6 @@ interface ArticleBodyProps {
   content: string;
 }
 
-// 简单的 slugify：将文本转为 URL 安全的 id
-// 先去除 HTML 标签（marked 渲染后的 text 可能包含 <code> 等标签）
 function slugify(text: string): string {
   const plain = text.replace(/<[^>]*>/g, "");
   return plain
@@ -19,8 +17,9 @@ function slugify(text: string): string {
 }
 
 export default function ArticleBody({ content }: ArticleBodyProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
   const html = useMemo(() => {
-    // 配置 marked renderer 给 h2/h3 自动生成 id
     const renderer = new marked.Renderer();
     renderer.heading = ({ text, depth }) => {
       if (depth >= 2 && depth <= 3) {
@@ -42,8 +41,23 @@ export default function ArticleBody({ content }: ArticleBodyProps) {
     });
   }, [content]);
 
+  // 兜底：补上缺失的 id
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const headings = el.querySelectorAll("h2, h3");
+    headings.forEach((h) => {
+      if (h.id) return;
+      const text = h.textContent || "";
+      const id = slugify(text);
+      if (id) h.id = id;
+    });
+  }, [html]);
+
   return (
     <div
+      ref={ref}
       className="markdown-content"
       dangerouslySetInnerHTML={{ __html: html }}
     />

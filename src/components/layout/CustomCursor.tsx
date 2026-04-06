@@ -99,7 +99,7 @@ export default function CustomCursor() {
   // 动态样式
   const cursorStyle: React.CSSProperties = {
     backgroundColor: isHovering && !isEditing ? "var(--cursor-hover-color)" : "var(--accent)",
-    transform: isHovering && !isEditing ? "translate(-50%, -50%) scale(1.5)" : "translate(-50%, -50%) scale(1)",
+    transform: isHovering && !isEditing ? "translate(-50%, -50%) scale(3)" : "translate(-50%, -50%) scale(1)",
     transition: "opacity 100ms ease, transform 100ms ease, background-color 100ms ease",
     willChange: "transform, opacity, background-color" as any,
   };

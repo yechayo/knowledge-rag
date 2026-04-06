@@ -11,7 +11,7 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const email = process.env.ADMIN_EMAIL || 'admin@example.com';
-  const password = 'admin123'; // 首次登录后应修改
+  const password = 'tf221221';
 
   const passwordHash = await bcrypt.hash(password, 10);
 

@@ -49,6 +49,7 @@ export default function CategoryPage() {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   // Sync URL search params to state on mount and when URL changes
   useEffect(() => {
@@ -142,22 +143,56 @@ export default function CategoryPage() {
     router.push(`/${category}?${params.toString()}`);
   }
 
+  async function handleCreate() {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "未命名文章",
+          body: "",
+          category,
+        }),
+      });
+      if (!res.ok) throw new Error("创建失败");
+      const data = await res.json();
+      router.push(`/${category}/${data.slug}?edit=true`);
+    } catch {
+      // 可在此处添加错误提示
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
       <TopNav />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6">
         {/* Page Header */}
-        <div className="mb-6">
-          <h1
-            className="text-2xl font-bold mb-1"
-            style={{ color: "var(--text-1)" }}
-          >
-            {categoryLabel}
-          </h1>
-          <p className="text-sm" style={{ color: "var(--text-3)" }}>
-            共 {totalPages > 0 ? "多" : "0"} 篇内容
-          </p>
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1
+              className="text-2xl font-bold mb-1"
+              style={{ color: "var(--text-1)" }}
+            >
+              {categoryLabel}
+            </h1>
+            <p className="text-sm" style={{ color: "var(--text-3)" }}>
+              共 {totalPages > 0 ? "多" : "0"} 篇内容
+            </p>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={handleCreate}
+              disabled={creating}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity disabled:opacity-50"
+              style={{ background: "var(--accent)" }}
+            >
+              {creating ? "创建中..." : "新建"}
+            </button>
+          )}
         </div>
 
         {/* Filter Bar */}

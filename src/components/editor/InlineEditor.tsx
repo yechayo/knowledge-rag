@@ -3,8 +3,9 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { marked } from "marked";
 
 interface InlineEditorProps {
@@ -31,6 +32,9 @@ function htmlToBasicMarkdown(html: string): string {
   md = md.replace(/<(em|i)>(.*?)<\/(?:em|i)>/gi, "*$2*");
   // Links
   md = md.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, "[$2]($1)");
+  // Images
+  md = md.replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*\/?>/gi, "![$2]($1)");
+  md = md.replace(/<img[^>]*src="([^"]*)"[^>]*\/?>/gi, "![]($1)");
   // Code blocks
   md = md.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, "```\n$1\n```\n\n");
   // Inline code
@@ -54,6 +58,8 @@ function htmlToBasicMarkdown(html: string): string {
 }
 
 export default function InlineEditor({ content, onChange, editable = true }: InlineEditorProps) {
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
   // Convert markdown to HTML for TipTap
   const htmlContent = useMemo(() => markdownToHtml(content), [content]);
 
@@ -62,6 +68,10 @@ export default function InlineEditor({ content, onChange, editable = true }: Inl
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4] },
+      }),
+      Image.configure({
+        inline: false,
+        allowBase64: true,
       }),
       Link.configure({
         openOnClick: false,
@@ -94,6 +104,23 @@ export default function InlineEditor({ content, onChange, editable = true }: Inl
       }
     }
   }, [content, htmlContent, editor]);
+
+  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editor) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error();
+      const { url } = await res.json();
+      editor.chain().focus().setImage({ src: url }).run();
+    } catch {
+      // 静默处理
+    }
+    e.target.value = "";
+  }, [editor]);
 
   if (!editor) return null;
 
@@ -171,6 +198,22 @@ export default function InlineEditor({ content, onChange, editable = true }: Inl
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 18l6-6-6-6M8 6l-6 6 6 6" /></svg>
           </ToolbarButton>
+
+          <div className="mx-1 h-5 w-px bg-[var(--border)]" />
+
+          <ToolbarButton
+            onClick={() => imageInputRef.current?.click()}
+            title="插入图片"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+          </ToolbarButton>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
 
           <div className="mx-1 h-5 w-px bg-[var(--border)]" />
 

@@ -2,19 +2,85 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateEmbedding, vectorToPostgresFormat } from '@/lib/embedding';
 
+interface ChunkResult {
+  id: string;
+  contentId: string;
+  title: string;
+  slug: string;
+  category: string;
+  content: string;
+  score: number;
+  chunkType: string;
+  headingLevel: number | null;
+  headingAnchor: string | null;
+  headingText: string | null;
+  sectionPath: string | null;
+  sourceTitle: string | null;
+  sourceSlug: string | null;
+  sourceCategory: string | null;
+  sourceTags: unknown;
+}
+
+interface FormattedResult {
+  chunkId: string;
+  contentId: string;
+  title: string;
+  slug: string;
+  category: string;
+  content: string;
+  score: number;
+  chunkType: string;
+  headingLevel?: number | null;
+  headingAnchor?: string | null;
+  headingText?: string | null;
+  sectionPath?: string | null;
+  sourceTitle?: string | null;
+  sourceTags?: string[];
+}
+
+/**
+ * 将数据库行格式化为统一的 result 对象
+ */
+function formatResult(r: ChunkResult): FormattedResult {
+  return {
+    chunkId: r.id,
+    contentId: r.contentId,
+    title: r.title,
+    slug: r.slug,
+    category: r.category,
+    content: r.content,
+    score: r.score,
+    chunkType: r.chunkType,
+    headingLevel: r.headingLevel,
+    headingAnchor: r.headingAnchor,
+    headingText: r.headingText,
+    sectionPath: r.sectionPath,
+    sourceTitle: r.sourceTitle,
+    sourceTags: Array.isArray(r.sourceTags) ? r.sourceTags : [],
+  };
+}
+
 /**
  * POST /api/retrieve - 全局向量检索接口（公开，无需鉴权）
  *
  * 入参:
  * - query: 查询文本
  * - topK: 返回结果数量（默认 5，最大 20）
+ * - grouped: 是否按 chunkType 分组返回（默认 false）
  *
- * 出参:
- * - results: 检索结果数组（含 chunkId, contentId, title, slug, category, content, score）
+ * 出参（标准模式）:
+ * - results: 检索结果数组
+ *
+ * 出参（分组模式 grouped: true）:
+ * - grouped: 按 chunkType 分组的结果
+ *   - nav_structure: top-2
+ *   - content_meta: top-5
+ *   - toc_entry: top-5
+ *   - content_body: top-8
  */
 export async function POST(req: Request) {
   try {
-    const { query, topK = 5 } = await req.json();
+    const { query, topK = 5, grouped = false } = await req.json();
 
     if (!query) {
       return NextResponse.json({ error: 'Missing query' }, { status: 400 });
@@ -27,15 +93,10 @@ export async function POST(req: Request) {
     const embeddingStr = vectorToPostgresFormat(queryEmbedding);
 
     // 搜索所有已发布内容的 chunks
-    const results = await prisma.$queryRaw<Array<{
-      id: string;
-      contentId: string;
-      title: string;
-      slug: string;
-      category: string;
-      content: string;
-      score: number;
-    }>>`
+    // 分组模式始终取 top-20，标准模式使用用户指定的 topK
+    const limit = grouped ? 20 : validTopK;
+
+    const results = await prisma.$queryRaw<ChunkResult[]>`
       SELECT
         c.id,
         c."contentId",
@@ -43,25 +104,54 @@ export async function POST(req: Request) {
         co.slug,
         co.category,
         c.content,
-        1 - (c.embedding <=> ${embeddingStr}::vector(256)) AS score
+        1 - (c.embedding <=> ${embeddingStr}::vector(256)) AS score,
+        c."chunkType",
+        c."headingLevel",
+        c."headingAnchor",
+        c."headingText",
+        c."sectionPath",
+        c."sourceTitle",
+        c."sourceSlug",
+        c."sourceCategory",
+        c."sourceTags"
       FROM "Chunk" c
       JOIN "Content" co ON c."contentId" = co.id
       WHERE co.status = 'published'
         AND c.embedding IS NOT NULL
       ORDER BY c.embedding <=> ${embeddingStr}::vector(256) ASC
-      LIMIT ${validTopK}
+      LIMIT ${limit}
     `;
 
+    if (grouped) {
+      // 按 chunkType 分组
+      const groups: Record<string, FormattedResult[]> = {
+        nav_structure: [],
+        content_meta: [],
+        toc_entry: [],
+        content_body: [],
+      };
+
+      // 每个 chunkType 的数量上限
+      const limits: Record<string, number> = {
+        nav_structure: 2,
+        content_meta: 5,
+        toc_entry: 5,
+        content_body: 8,
+      };
+
+      for (const r of results) {
+        const type = r.chunkType;
+        if (type in groups && groups[type].length < limits[type]) {
+          groups[type].push(formatResult(r));
+        }
+      }
+
+      return NextResponse.json({ grouped: groups });
+    }
+
+    // 标准模式：直接返回格式化后的结果
     return NextResponse.json({
-      results: results.map((r) => ({
-        chunkId: r.id,
-        contentId: r.contentId,
-        title: r.title,
-        slug: r.slug,
-        category: r.category,
-        content: r.content,
-        score: r.score,
-      })),
+      results: results.map(formatResult),
     });
   } catch (error) {
     console.error('Retrieve failed:', error);

@@ -138,7 +138,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { title, slug: inputSlug, body: contentBody, category, metadata, status } = body;
 
-    if (!title || !contentBody || !category) {
+    if (!title || contentBody === undefined || !category) {
       return NextResponse.json({ error: 'Missing required fields: title, body, category' }, { status: 400 });
     }
 

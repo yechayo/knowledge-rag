@@ -28,6 +28,7 @@ model Content {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   chunks    Chunk[]  @relation("ChunkToContent")
+  images    Image[]
 
   @@index([category])
   @@index([status])
@@ -35,17 +36,36 @@ model Content {
   @@index([category, status])
 }
 
+model Image {
+  id        String   @id @default(cuid())
+  data      Bytes
+  mimeType  String
+  contentId String?
+  content   Content? @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
 model Chunk {
-  id          String                 @id @default(cuid())
-  content     String
-  contentHash String
-  embedding   Unsupported("vector")?
-  contentId   String
-  createdAt   DateTime               @default(now())
-  parent      Content                @relation("ChunkToContent", fields: [contentId], references: [id], onDelete: Cascade)
+  id              String                 @id @default(cuid())
+  content         String
+  contentHash     String
+  embedding       Unsupported("vector")?
+  contentId       String
+  createdAt       DateTime               @default(now())
+  parent          Content                @relation("ChunkToContent", fields: [contentId], references: [id], onDelete: Cascade)
+  chunkType       String                 @default("content_body")
+  headingLevel    Int?
+  headingAnchor   String?
+  headingText     String?
+  sourceTitle     String?
+  sourceSlug      String?
+  sourceCategory  String?
+  sourceTags      Json                   @default("[]")
+  sectionPath     String?
 
   @@index([contentId])
   @@index([contentHash])
+  @@index([chunkType])
 }
 
 model SiteConfig {
