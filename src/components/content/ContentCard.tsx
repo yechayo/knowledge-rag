@@ -186,10 +186,10 @@ export default function ContentCard({
         </div>
       </Link>
 
-      {/* Admin edit button */}
+      {/* Admin edit indicator */}
       {isAdmin && (
         <Link
-          href={`/admin/edit/${id}`}
+          href={`/${category}/${slug}`}
           className="absolute top-[148px] right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-md"
           style={{ background: "var(--accent)" }}
         >

@@ -3,7 +3,7 @@
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text-1);
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'KaiTi', 'STKaiti', 'AR PL UKai CN', '楷体', serif;
   --font-mono: 'Cascadia Code', 'JetBrains Mono', monospace;
 }
 
@@ -39,7 +39,18 @@ body {
   font-family: var(--font-sans);
   transition: background 0.3s, color 0.3s;
   cursor: none;
+  font-size: 17px;
 }
+
+/* 放大文字，不影响布局 */
+.text-xs { font-size: 0.8rem !important; }
+.text-sm { font-size: 0.95rem !important; }
+.text-base { font-size: 1.1rem !important; }
+.text-lg { font-size: 1.25rem !important; }
+.text-xl { font-size: 1.45rem !important; }
+.text-2xl { font-size: 1.7rem !important; }
+.text-3xl { font-size: 2rem !important; }
+.text-4xl { font-size: 2.4rem !important; }
 
 /* Hide native cursor on all elements (desktop only) */
 @media (min-width: 769px) {
@@ -56,10 +67,10 @@ body {
 }
 
 /* Markdown 内容样式 */
-.markdown-content h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem; }
-.markdown-content h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; }
-.markdown-content h3 { font-size: 1.125rem; font-weight: 700; margin-bottom: 0.5rem; }
-.markdown-content h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.25rem; }
+.markdown-content h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.75rem; }
+.markdown-content h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+.markdown-content h3 { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
+.markdown-content h4 { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.25rem; }
 .markdown-content p { margin-bottom: 1rem; line-height: 1.75; }
 .markdown-content ul, .markdown-content ol { margin-bottom: 1rem; padding-left: 1.5rem; }
 .markdown-content li { margin-bottom: 0.25rem; }
@@ -198,11 +209,66 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 14px 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-3);
 }
 .foot a { color: var(--text-3); text-decoration: none; transition: color 0.2s; }
 .foot a:hover { color: var(--text-2); }
+
+/* TipTap Editor Styles */
+.tiptap p { margin-bottom: 0.75em; }
+.tiptap h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem; margin-top: 1.5rem; }
+.tiptap h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; margin-top: 1.25rem; }
+.tiptap h3 { font-size: 1.125rem; font-weight: 700; margin-bottom: 0.5rem; margin-top: 1rem; }
+.tiptap h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.25rem; margin-top: 0.75rem; }
+.tiptap ul, .tiptap ol { padding-left: 1.5rem; margin-bottom: 0.75em; }
+.tiptap ul { list-style-type: disc; }
+.tiptap ol { list-style-type: decimal; }
+.tiptap li { margin-bottom: 0.25em; }
+.tiptap blockquote {
+  border-left: 4px solid var(--accent);
+  padding-left: 1rem;
+  color: var(--text-2);
+  font-style: italic;
+  margin-bottom: 0.75em;
+}
+.tiptap pre {
+  background: var(--code-bg);
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.75em;
+}
+.tiptap code {
+  background: var(--card-hover);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+.tiptap pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+.tiptap a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tiptap hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  color: var(--text-3);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
 
 /* Responsive */
 @media (max-width: 900px) {
