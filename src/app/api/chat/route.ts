@@ -1,190 +1,211 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { chat, buildRAGPrompt, type Message } from '@/lib/glm';
-
-interface ChatRequest {
-  kbId: string;
-  messages: Array<{ role: string; content: string }>;
-}
-
-interface Source {
-  chunkId: string;
-  docId: string;
-  docName?: string;
-  content: string;
-  pageStart: number;
-  pageEnd: number;
-  score: number;
-}
-
-function parseUsedSourceIndexes(answer: string, max: number): number[] {
-  const sourceLineMatch = answer.match(/SOURCES\s*[:：]\s*([^\n\r]+)/i);
-  if (!sourceLineMatch) return [];
-
-  const raw = sourceLineMatch[1].trim();
-  if (!raw || /none|无|没有/i.test(raw)) return [];
-
-  const numbers = raw
-    .split(/[,，\s]+/)
-    .map((part) => Number.parseInt(part, 10))
-    .filter((num) => Number.isInteger(num) && num >= 1 && num <= max);
-
-  return Array.from(new Set(numbers));
-}
-
-function cleanAnswerText(answer: string): string {
-  return answer.replace(/\n?SOURCES\s*[:：]\s*[^\n\r]*/gi, '').trim();
-}
 
 /**
- * POST /api/chat - RAG 聊天接口
+ * POST /api/chat - 全局 RAG 聊天接口（公开，SSE 流式输出）
  *
  * 入参:
- * - kbId: 知识库 ID
- * - messages: 对话消息数组
+ * - messages: 对话消息数组 [{role, content}]
  *
  * 出参:
- * - answer: AI 回答
- * - sources: 引用来源列表
+ * - SSE 流 (text/event-stream)
+ *   - type: 'answer' -> AI 回答片段
+ *   - type: 'sources' -> 引用来源列表
+ *   - type: 'error' -> 错误信息
  */
 export async function POST(req: Request) {
-  // 1. 鉴权
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
-    // 2. 解析请求参数
-    const body: ChatRequest = await req.json();
+    const { messages } = await req.json();
 
-    if (!body.kbId || !body.messages || !Array.isArray(body.messages)) {
-      return NextResponse.json(
-        { error: '缺少必填参数: kbId, messages' },
-        { status: 400 }
-      );
+    if (!messages || !Array.isArray(messages)) {
+      return new Response('Missing messages', { status: 400 });
     }
 
-    const { kbId, messages } = body;
-
-    // 3. 验证知识库归属
-    const kb = await prisma.knowledgeBase.findUnique({
-      where: {
-        id: kbId,
-        userId: session.user.id,
-      },
-    });
-
-    if (!kb) {
-      return NextResponse.json(
-        { error: '知识库不存在或无权访问' },
-        { status: 404 }
-      );
-    }
-
-    // 4. 获取最后一条用户消息作为查询
     const lastUserMessage = messages
-      .filter((m) => m.role === 'user')
+      .filter((m: { role: string }) => m.role === 'user')
       .pop();
 
-    if (!lastUserMessage || !lastUserMessage.content) {
-      return NextResponse.json(
-        { error: '未找到有效的用户问题' },
-        { status: 400 }
-      );
+    if (!lastUserMessage?.content) {
+      return new Response('Missing user message', { status: 400 });
     }
 
     const query = lastUserMessage.content;
 
-    // 5. 调用检索接口
-    const retrieveResponse = await fetch(
-      new URL('/api/retrieve', req.url),
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          cookie: req.headers.get('cookie') || '',
-        },
-        body: JSON.stringify({ kbId, query, topK: 5 }),
-      }
-    );
+    // 调用全局检索接口
+    const retrieveRes = await fetch(new URL('/api/retrieve', req.url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, topK: 5 }),
+    });
+    const retrieveData = await retrieveRes.json();
+    const sources: Array<{
+      title: string;
+      slug: string;
+      category: string;
+      content: string;
+    }> = retrieveData.results || [];
 
-    if (!retrieveResponse.ok) {
-      const errorData = await retrieveResponse.json().catch(() => ({}));
-      return NextResponse.json(
-        { error: '检索失败', details: errorData.error || '未知错误' },
-        { status: retrieveResponse.status }
-      );
-    }
+    // 构建 RAG 提示词
+    const systemPrompt =
+      sources.length > 0
+        ? `你是一个专业的知识库助手。请基于以下检索到的内容回答用户问题。
+回答要求：
+1. 优先使用提供的文档片段内容
+2. 如果文档中没有相关信息，请明确告知
+3. 回答时注明引用来源
+4. 保持简洁准确
 
-    const retrieveData = await retrieveResponse.json();
+检索到的内容：
+${sources
+  .map(
+    (s, i) =>
+      `[${i + 1}] ${s.title} (${s.category}/${s.slug})\n${s.content}`
+  )
+  .join('\n\n---\n\n')}`
+        : `你是一个友好的网站助手。用户的问题是关于网站内容的，但目前知识库中没有找到相关内容。请友好地回复并建议用户浏览网站的其他内容。`;
 
-    if (!retrieveData.results || retrieveData.results.length === 0) {
-      return NextResponse.json({
-        answer: '抱歉，我在知识库中没有找到与您问题相关的内容。请尝试换个问题或上传更多相关文档。',
-        sources: [],
-      });
-    }
-
-    const sources: Source[] = retrieveData.results;
-
-    // 6. 构建 RAG 提示词并调用 LLM
-    const ragPrompt = buildRAGPrompt(
-      query,
-      sources.map((s: Source) => ({
-        content: s.content,
-        pageStart: s.pageStart,
-        pageEnd: s.pageEnd,
-        docName: s.docName,
-      }))
-    );
-
-    // 转换消息格式以适配历史消息
-    const chatMessages: Message[] = [
-      ragPrompt[0], // system prompt with context
-      ...messages.slice(0, -1).map((m) => ({
-        role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as 'user' | 'assistant',
-        content: m.content,
-      })),
-      { role: 'user', content: ragPrompt[1].content }, // current query
+    const chatMessages = [
+      { role: 'system' as const, content: systemPrompt },
+      ...messages
+        .slice(0, -1)
+        .map((m: { role: string; content: string }) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      { role: 'user' as const, content: query },
     ];
 
-    const rawAnswer = await chat(chatMessages);
-    const usedIndexes = parseUsedSourceIndexes(rawAnswer, sources.length);
-    const answer = cleanAnswerText(rawAnswer);
-    const usedSources = usedIndexes.map((idx) => sources[idx - 1]).filter(Boolean);
+    // 使用 ReadableStream 进行 SSE 流式响应
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
 
-    // 7. 返回结果
-    return NextResponse.json({
-      answer,
-      sources: usedSources.map((s: Source) => ({
-        chunkId: s.chunkId,
-        docId: s.docId,
-        docName: s.docName,
-        pageStart: s.pageStart,
-        pageEnd: s.pageEnd,
-        score: s.score,
-      })),
+        try {
+          const apiKey = process.env.BIGMODEL_API_KEY;
+          if (!apiKey) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'error', data: '服务配置异常：缺少 API Key' })}\n\n`
+              )
+            );
+            controller.close();
+            return;
+          }
+
+          // 调用智谱 GLM API（流式）
+          const response = await fetch(
+            'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: 'glm-4-flash',
+                messages: chatMessages,
+                temperature: 0.7,
+                max_tokens: 2000,
+                stream: true,
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'error', data: errorText })}\n\n`
+              )
+            );
+            controller.close();
+            return;
+          }
+
+          const reader = response.body?.getReader();
+          if (!reader) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'error', data: 'No response body' })}\n\n`
+              )
+            );
+            controller.close();
+            return;
+          }
+
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data:')) continue;
+              const data = trimmed.slice(5).trim();
+              if (data === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({ type: 'answer', data: content })}\n\n`
+                    )
+                  );
+                }
+              } catch {
+                // 忽略解析错误
+              }
+            }
+          }
+
+          // 发送引用来源
+          if (sources.length > 0) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'sources',
+                  data: sources.map((s) => ({
+                    title: s.title,
+                    slug: s.slug,
+                    category: s.category,
+                  })),
+                })}\n\n`
+              )
+            );
+          }
+
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        } catch (error) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'error',
+                data: String(error),
+              })}\n\n`
+            )
+          );
+          controller.close();
+        }
+      },
     });
 
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    });
   } catch (error) {
     console.error('Chat failed:', error);
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    // 提供友好的错误提示
-    if (errorMessage.includes('BIGMODEL_API_KEY')) {
-      return NextResponse.json(
-        { error: '服务配置异常，请联系管理员配置 API Key' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      error: '对话服务异常',
-      details: errorMessage,
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Chat failed' }, { status: 500 });
   }
 }
