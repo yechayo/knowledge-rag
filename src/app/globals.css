@@ -38,6 +38,21 @@ body {
   color: var(--text-1);
   font-family: var(--font-sans);
   transition: background 0.3s, color 0.3s;
+  cursor: none;
+}
+
+/* Hide native cursor on all elements (desktop only) */
+@media (min-width: 769px) {
+  * {
+    cursor: none !important;
+  }
+}
+
+/* Restore cursor on mobile */
+@media (max-width: 768px) {
+  body {
+    cursor: auto;
+  }
 }
 
 /* Markdown 内容样式 */
@@ -109,12 +124,13 @@ body {
 /* Custom cursor */
 .cursor-dot {
   position: fixed;
-  width: 6px; height: 6px;
+  width: 8px; height: 8px;
   background: var(--accent);
   border-radius: 50%;
   pointer-events: none;
   z-index: 9999;
   mix-blend-mode: difference;
+  transform-origin: center;
 }
 
 /* Shell layout */

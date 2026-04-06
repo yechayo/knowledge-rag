@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import TopNav from "@/components/layout/TopNav";
+import AnimatedWrapper from "@/components/ui/AnimatedWrapper";
 import ProfileCard from "@/components/home/ProfileCard";
 import ProjectsShowcase from "@/components/home/ProjectsShowcase";
 import SkillsGrid from "@/components/home/SkillsGrid";
@@ -11,8 +12,6 @@ import StatsCard from "@/components/home/StatsCard";
 export default function HomePage() {
   // Mouse parallax for background blobs
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
-  // Custom cursor
-  const cursorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -20,12 +19,6 @@ export default function HomePage() {
         x: (e.clientX / window.innerWidth - 0.5) * 20,
         y: (e.clientY / window.innerHeight - 0.5) * 20,
       });
-
-      // Move custom cursor
-      if (cursorRef.current) {
-        cursorRef.current.style.left = `${e.clientX - 3}px`;
-        cursorRef.current.style.top = `${e.clientY - 3}px`;
-      }
     };
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
@@ -50,21 +43,28 @@ export default function HomePage() {
       </div>
       <div className="grid-overlay" />
 
-      {/* Custom cursor (desktop only) */}
-      <div ref={cursorRef} className="cursor-dot hidden md:block" />
-
       {/* Main content */}
       <div className="shell">
         <TopNav />
         <div className="cards-area">
           <div className="row row-1">
-            <ProfileCard />
-            <ProjectsShowcase />
+            <AnimatedWrapper index={0}>
+              <ProfileCard />
+            </AnimatedWrapper>
+            <AnimatedWrapper index={0}>
+              <ProjectsShowcase />
+            </AnimatedWrapper>
           </div>
           <div className="row row-2">
-            <SkillsGrid />
-            <SloganCard />
-            <StatsCard />
+            <AnimatedWrapper index={1}>
+              <SkillsGrid />
+            </AnimatedWrapper>
+            <AnimatedWrapper index={1}>
+              <SloganCard />
+            </AnimatedWrapper>
+            <AnimatedWrapper index={1}>
+              <StatsCard />
+            </AnimatedWrapper>
           </div>
         </div>
         <footer className="foot">
