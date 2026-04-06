@@ -1,137 +1,80 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --font-geist-sans: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", Arial, Helvetica, sans-serif;
-  --font-geist-mono: "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg);
+  --color-foreground: var(--text-1);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --bg: #f5f5f7;
+  --card: #ffffff;
+  --card-hover: #fafafa;
+  --text-1: #1c1c1e;
+  --text-2: #6b6b76;
+  --text-3: #a0a0aa;
+  --border: rgba(0,0,0,0.06);
+  --accent: #4f46e5;
+  --accent-bg: rgba(79,70,229,0.06);
+  --code-bg: #1e1e2e;
+}
+
+.dark {
+  --bg: #0c0c0d;
+  --card: rgba(255,255,255,0.035);
+  --card-hover: rgba(255,255,255,0.06);
+  --text-1: #d4d4d8;
+  --text-2: #8b8b96;
+  --text-3: #55555f;
+  --border: rgba(255,255,255,0.06);
+  --accent: #6366f1;
+  --accent-bg: rgba(99,102,241,0.08);
+  --code-bg: #16161e;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  transition: background 0.3s, color 0.3s;
 }
 
 /* Markdown 内容样式 */
-.markdown-content h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 0.75rem;
-  color: #111827;
-}
-
-.markdown-content h2 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-  color: #1f2937;
-}
-
-.markdown-content h3 {
-  font-size: 1.125rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-  color: #1f2937;
-}
-
-.markdown-content h4 {
-  font-size: 1rem;
-  font-weight: 700;
-  margin-bottom: 0.25rem;
-  color: #374151;
-}
-
-.markdown-content p {
-  margin-bottom: 1rem;
-  line-height: 1.75;
-}
-
-.markdown-content ul,
-.markdown-content ol {
-  margin-bottom: 1rem;
-  padding-left: 1.5rem;
-}
-
-.markdown-content li {
-  margin-bottom: 0.25rem;
-}
-
+.markdown-content h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem; }
+.markdown-content h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; }
+.markdown-content h3 { font-size: 1.125rem; font-weight: 700; margin-bottom: 0.5rem; }
+.markdown-content h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.25rem; }
+.markdown-content p { margin-bottom: 1rem; line-height: 1.75; }
+.markdown-content ul, .markdown-content ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+.markdown-content li { margin-bottom: 0.25rem; }
 .markdown-content code {
-  background-color: #f3f4f6;
+  background: var(--code-bg);
+  color: #e2e8f0;
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 0.875em;
 }
-
 .markdown-content pre {
-  background-color: #1f2937;
-  color: #f9fafb;
+  background: var(--code-bg);
+  color: #e2e8f0;
   padding: 1rem;
   border-radius: 0.5rem;
   overflow-x: auto;
   margin-bottom: 1rem;
 }
-
-.markdown-content pre code {
-  background-color: transparent;
-  padding: 0;
-  color: inherit;
-}
-
+.markdown-content pre code { background: transparent; padding: 0; color: inherit; }
 .markdown-content blockquote {
-  border-left: 4px solid #e5e7eb;
+  border-left: 4px solid var(--accent);
   padding-left: 1rem;
-  color: #6b7280;
+  color: var(--text-2);
   font-style: italic;
   margin-bottom: 1rem;
 }
-
-.markdown-content a {
-  color: #2563eb;
-  text-decoration: underline;
-}
-
-.markdown-content a:hover {
-  color: #1d4ed8;
-}
-
-.markdown-content table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 1rem;
-}
-
-.markdown-content th,
-.markdown-content td {
-  border: 1px solid #e5e7eb;
-  padding: 0.5rem;
-  text-align: left;
-}
-
-.markdown-content th {
-  background-color: #f9fafb;
-  font-weight: 600;
-}
-
-.markdown-content img {
-  max-width: 100%;
-  height: auto;
-  border-radius: 0.5rem;
-  margin: 1rem 0;
-}
+.markdown-content a { color: var(--accent); text-decoration: underline; }
+.markdown-content a:hover { opacity: 0.8; }
+.markdown-content table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+.markdown-content th, .markdown-content td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+.markdown-content th { background: var(--card-hover); font-weight: 600; }
+.markdown-content img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1rem 0; }

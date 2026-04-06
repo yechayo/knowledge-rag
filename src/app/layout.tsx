@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "@/app/providers";
 
 export const metadata: Metadata = {
-  title: "Knowledge RAG",
-  description: "Personal Knowledge Base with RAG",
+  title: "Personal Site",
+  description: "个人网站 - RAG 知识库",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
