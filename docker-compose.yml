@@ -1,7 +1,7 @@
 services:
   db:
     image: ankane/pgvector:latest
-    container_name: knowledge-rag-db
+    container_name: yechayo-db
     restart: always
     environment:
       POSTGRES_USER: postgres

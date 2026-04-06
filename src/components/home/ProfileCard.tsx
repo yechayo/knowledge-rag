@@ -1,12 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-
-const profile = {
-  name: "KnowledgeRag",
-  bio: "个人知识管理与 RAG 问答平台",
-  avatar: "K",
-};
 
 const socials = [
   {
@@ -49,19 +44,34 @@ const socials = [
 ];
 
 export default function ProfileCard() {
+  const [name, setName] = useState("yechayo");
+  const [bio, setBio] = useState("个人知识管理与 RAG 问答平台");
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((config) => {
+        if (config.siteName) setName(config.siteName);
+        if (config.siteBio) setBio(config.siteBio);
+      })
+      .catch(() => {});
+  }, []);
+
+  const avatar = name.slice(0, 1).toUpperCase();
+
   return (
     <div className="card flex flex-col items-center justify-center text-center h-full">
       {/* Avatar ring */}
       <div className="avatar-ring mb-4">
-        <span className="avatar-letter">{profile.avatar}</span>
+        <span className="avatar-letter">{avatar}</span>
       </div>
 
       {/* Name & Bio */}
       <h2 className="text-lg font-bold" style={{ color: "var(--text-1)" }}>
-        {profile.name}
+        {name}
       </h2>
       <p className="text-sm mt-1" style={{ color: "var(--text-2)" }}>
-        {profile.bio}
+        {bio}
       </p>
 
       {/* Buttons */}

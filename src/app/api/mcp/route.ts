@@ -1,6 +1,6 @@
 /**
  * MCP Server 路由
- * 基于 Streamable HTTP 传输协议，暴露 KnowledgeRag 的内容管理工具
+ * 基于 Streamable HTTP 传输协议，暴露 yechayo 的内容管理工具
  */
 import { createMcpHandler } from 'mcp-handler';
 import { registerTools } from '@/lib/mcp-tools';
@@ -15,7 +15,7 @@ const mcpHandler = createMcpHandler(
   },
   {
     serverInfo: {
-      name: 'knowledge-rag',
+      name: 'yechayo',
       version: '1.0.0',
     },
   },

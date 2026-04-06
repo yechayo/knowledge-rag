@@ -1,6 +1,6 @@
 /**
  * MCP 工具定义
- * 为 KnowledgeRag 提供 CRUD 和搜索能力
+ * 为 yechayo 提供 CRUD 和搜索能力
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';

@@ -69,7 +69,7 @@ export default function ProfileWidget() {
     fetchData();
   }, []);
 
-  const name = config.siteOwner || config.siteName || "KnowledgeRag";
+  const name = config.siteOwner || config.siteName || "yechayo";
   const bio = config.siteBio || "个人知识库";
   const initial = name.charAt(0).toUpperCase();
 

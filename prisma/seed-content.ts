@@ -735,8 +735,8 @@ test: 添加用户服务测试
   // ============================================================
   const projects = [
     {
-      title: 'KnowledgeRag',
-      slug: 'knowledge-rag',
+      title: 'yechayo',
+      slug: 'yechayo',
       category: 'project',
       status: 'published',
       body: '',
