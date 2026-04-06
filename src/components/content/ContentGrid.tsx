@@ -30,7 +30,7 @@ export default function ContentGrid({ items, isAdmin = false }: ContentGridProps
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       {items.map((item, index) => (
-        <AnimatedWrapper key={item.id} index={index}>
+        <AnimatedWrapper key={item.id} index={index} columns={3}>
           <ContentCard
             id={item.id}
             title={item.title}
