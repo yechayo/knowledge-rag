@@ -1,11 +1,9 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  extensions = [uuid_ossp(map: "uuid-ossp", schema: "extensions"), vector]
+  provider = "postgresql"
 }
 
 model Admin {

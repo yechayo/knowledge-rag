@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 const loginSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
@@ -42,7 +41,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError("邮箱或密码错误");
       } else {
-        router.push("/"); // 登录成功后跳转首页
+        router.push("/");
         router.refresh();
       }
     } catch (err) {
@@ -53,15 +52,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 py-12 sm:px-6 lg:px-8">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg)] py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          登录您的账户
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-[var(--text-1)]">
+          管理员登录
         </h2>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white px-4 py-8 shadow sm:rounded-lg sm:px-10">
+        <div className="bg-[var(--card)] px-4 py-8 shadow sm:rounded-lg sm:px-10">
           <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
             {error && (
               <div className="rounded-md bg-red-50 p-4">
@@ -76,7 +75,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-[var(--text-2)]"
               >
                 邮箱地址
               </label>
@@ -87,7 +86,7 @@ export default function LoginPage() {
                   autoComplete="email"
                   required
                   {...register("email")}
-                  className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                  className="block w-full appearance-none rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 placeholder-[var(--text-3)] text-[var(--text-1)] shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
                 />
                 {errors.email && (
                   <p className="mt-2 text-sm text-red-600">
@@ -100,7 +99,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-[var(--text-2)]"
               >
                 密码
               </label>
@@ -111,7 +110,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   required
                   {...register("password")}
-                  className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                  className="block w-full appearance-none rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 placeholder-[var(--text-3)] text-[var(--text-1)] shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
                 />
                 {errors.password && (
                   <p className="mt-2 text-sm text-red-600">
@@ -131,28 +130,6 @@ export default function LoginPage() {
               </button>
             </div>
           </form>
-
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="bg-white px-2 text-gray-500">
-                  还没有账号？
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-3">
-              <Link
-                href="/register"
-                className="flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-              >
-                注册新账号
-              </Link>
-            </div>
-          </div>
         </div>
       </div>
     </div>
