@@ -224,7 +224,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
             <div
               className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
                 msg.role === "user"
-                  ? "bg-accent text-white"
+                  ? "bg-[var(--accent)] text-white"
                   : "bg-[var(--card-hover)] text-[var(--text-1)]"
               }`}
             >
@@ -253,7 +253,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
                         href={`/${source.category}/${source.slug}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-block rounded-md bg-[var(--bg)] px-2 py-0.5 text-xs text-[var(--accent)] transition-colors hover:bg-accent hover:text-white"
+                        className="inline-block rounded-md bg-[var(--bg)] px-2 py-0.5 text-xs text-[var(--accent)] transition-colors hover:bg-[var(--accent)] hover:text-white"
                         title={source.title}
                       >
                         {source.title.length > 10
@@ -282,12 +282,12 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
             onKeyDown={handleKeyDown}
             placeholder="输入问题..."
             disabled={isLoading}
-            className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text-1)] placeholder-[var(--text-3)] outline-none transition-colors focus:border-accent disabled:opacity-50"
+            className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text-1)] placeholder-[var(--text-3)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
           />
           <button
             onClick={sendMessage}
             disabled={isLoading || !input.trim()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white transition-opacity disabled:opacity-50"
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-white transition-opacity disabled:opacity-50"
             aria-label="发送"
           >
             <svg
