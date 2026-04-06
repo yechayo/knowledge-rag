@@ -1,115 +1,86 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider   = "postgresql"
-  extensions = [vector]
+  provider  = "postgresql"
+  extensions = [pgvector]
 }
 
-// User model for NextAuth
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  passwordHash  String?
-  role          String    @default("user")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+// ========== 管理员 ==========
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
 
-  accounts       Account[]
-  sessions       Session[]
-  knowledgeBases KnowledgeBase[]
-  documents      Document[]
-  chunks         Chunk[]
+  accounts Account[]
+  sessions Session[]
 }
 
-// --- 业务模型开始 ---
+// ========== 内容 ==========
+model Content {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  body      String   @default("")
+  category  String   @default("article") // article, project, note, page, link, slogan
+  metadata  Json     @default("{}")
+  status    String   @default("draft")   // draft, published
+  viewCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-model KnowledgeBase {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  chunks Chunk[] @relation("ChunkToContent")
 
-  documents Document[]
-  chunks    Chunk[]
-
-  @@index([userId])
+  @@index([category])
+  @@index([status])
+  @@index([slug])
+  @@index([category, status])
 }
 
-model Document {
-  id           String    @id @default(cuid())
-  filename     String
-  storagePath  String    // 存储路径（Supabase Storage 或 本地）
-  mime         String    @default("application/pdf")
-  status       String    @default("uploaded") // uploaded, processing, ready, error
-  error        String?
-  kbId         String
-  userId       String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  indexedAt    DateTime?
-
-  knowledgeBase KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chunks        Chunk[]
-
-  @@index([kbId])
-  @@index([userId])
-}
-
+// ========== 向量分块 ==========
 model Chunk {
-  id          String   @id @default(cuid())
-  content     String   @db.Text
-  contentHash String?  // 用于去重(可选)
-  pageStart   Int
-  pageEnd     Int
-  
-  // Vector 字段：手动指定 vector(256)
-  // 虽然 Prisma 目前通过 Unsupported 支持，但我们需要在迁移后手动处理或使用 Raw SQL
-  embedding   Unsupported("vector(256)")?
+  id           String   @id @default(cuid())
+  content      String
+  contentHash  String
+  embedding    Unsupported("vector")?
+  contentId    String
+  parent       Content @relation("ChunkToContent", fields: [contentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
 
-  kbId        String
-  docId       String
-  userId      String
-  createdAt   DateTime @default(now())
-
-  knowledgeBase KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
-  document      Document      @relation(fields: [docId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([kbId])
-  @@index([docId])
-  @@index([userId])
+  @@index([contentId])
+  @@index([contentHash])
 }
 
-// --- 业务模型结束 ---
+// ========== 站点配置 ==========
+model SiteConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
 
+  @@index([key])
+}
+
+// ========== NextAuth 兼容 ==========
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String? @db.Text
-  access_token       String? @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String? @db.Text
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user Admin @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -119,7 +90,8 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user Admin @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
