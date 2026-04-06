@@ -7,13 +7,7 @@ import TopNav from "@/components/layout/TopNav";
 import FilterBar from "@/components/content/FilterBar";
 import ContentGrid from "@/components/content/ContentGrid";
 import Pagination from "@/components/content/Pagination";
-
-const categoryLabels: Record<string, string> = {
-  article: "文章",
-  project: "项目",
-  note: "笔记",
-  page: "页面",
-};
+import { useCategories } from "@/hooks/useCategories";
 
 interface ContentItem {
   id: string;
@@ -38,6 +32,7 @@ export default function CategoryPage() {
   const { data: session } = useSession();
 
   const category = params.category;
+  const { categoryLabels } = useCategories();
   const categoryLabel = categoryLabels[category] || category;
   const isAdmin = !!(session?.user as any)?.isAdmin;
 
@@ -272,7 +267,7 @@ export default function CategoryPage() {
         {/* Content Grid */}
         {!loading && items.length > 0 && (
           <>
-            <ContentGrid items={items} isAdmin={isAdmin} />
+            <ContentGrid items={items} isAdmin={isAdmin} categoryLabels={categoryLabels} />
 
             {/* Pagination */}
             <div className="mt-8">

@@ -27,16 +27,14 @@ export async function GET(
 
     // 已发布的内容递增浏览量
     if (content.status === 'published') {
-      await prisma.content.update({
+      const updated = await prisma.content.update({
         where: { id: content.id },
         data: { viewCount: { increment: 1 } },
       });
+      return NextResponse.json(updated);
     }
 
-    return NextResponse.json({
-      ...content,
-      viewCount: content.status === 'published' ? content.viewCount + 1 : content.viewCount,
-    });
+    return NextResponse.json(content);
   } catch (error) {
     console.error('Failed to fetch content:', error);
     return NextResponse.json(

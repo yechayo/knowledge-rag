@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { generateHeadingAnchor } from '@/lib/heading-anchor';
 
 /**
  * 用于接收 grouped 模式检索结果的单条 chunk 类型
@@ -81,8 +82,11 @@ function buildContentBodySection(chunks: GroupedChunk[]): string {
   if (chunks.length === 0) return '暂无详细内容';
   return chunks
     .map((c, i) => {
-      const link = c.headingAnchor
-        ? '/' + c.category + '/' + c.slug + '#' + c.headingAnchor
+      const normalizedAnchor = c.headingText
+        ? generateHeadingAnchor(c.headingText)
+        : (c.headingAnchor || '');
+      const link = normalizedAnchor
+        ? '/' + c.category + '/' + c.slug + '#' + normalizedAnchor
         : '/' + c.category + '/' + c.slug;
       return '[' + (i + 1) + '] 《' + c.title + '》' + (c.sectionPath ? '- ' + c.sectionPath : '') + ' (链接: ' + link + ')\n' + c.content;
     })
@@ -104,7 +108,9 @@ function extractSources(grouped: GroupedResult): SourceCitation[] {
         title: chunk.title,
         slug: chunk.slug,
         category: chunk.category,
-        headingAnchor: chunk.headingAnchor,
+        headingAnchor: chunk.headingText
+          ? generateHeadingAnchor(chunk.headingText)
+          : chunk.headingAnchor,
         headingText: chunk.headingText,
         sectionPath: chunk.sectionPath,
         contentPreview: chunk.content.length > 100 ? chunk.content.slice(0, 100) + '...' : chunk.content,
@@ -276,7 +282,7 @@ export async function POST(req: Request) {
                 Authorization: 'Bearer ' + apiKey,
               },
               body: JSON.stringify({
-                model: 'GLM-5-Turbo',
+                model: 'GLM-4.5-AirX',
                 messages: chatMessages,
                 temperature: 0.5,
                 max_tokens: 4000,

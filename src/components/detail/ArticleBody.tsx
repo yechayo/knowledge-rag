@@ -3,17 +3,10 @@
 import { useMemo, useEffect, useRef } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { generateHeadingAnchor } from "@/lib/heading-anchor";
 
 interface ArticleBodyProps {
   content: string;
-}
-
-function slugify(text: string): string {
-  const plain = text.replace(/<[^>]*>/g, "");
-  return plain
-    .toLowerCase()
-    .replace(/[^\w\u4e00-\u9fff\s-]/g, "")
-    .replace(/\s+/g, "-");
 }
 
 export default function ArticleBody({ content }: ArticleBodyProps) {
@@ -23,7 +16,7 @@ export default function ArticleBody({ content }: ArticleBodyProps) {
     const renderer = new marked.Renderer();
     renderer.heading = ({ text, depth }) => {
       if (depth >= 2 && depth <= 3) {
-        const id = slugify(text);
+        const id = generateHeadingAnchor(text);
         return `<h${depth} id="${id}">${text}</h${depth}>`;
       }
       return `<h${depth}>${text}</h${depth}>`;
@@ -50,7 +43,7 @@ export default function ArticleBody({ content }: ArticleBodyProps) {
     headings.forEach((h) => {
       if (h.id) return;
       const text = h.textContent || "";
-      const id = slugify(text);
+      const id = generateHeadingAnchor(text);
       if (id) h.id = id;
     });
   }, [html]);

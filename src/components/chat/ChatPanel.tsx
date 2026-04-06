@@ -27,15 +27,29 @@ interface ChatPanelProps {
 function InlineRef({
   href,
   label,
+  refText,
 }: {
   href: string;
   label: string;
+  refText?: string;
 }) {
+  const buildJumpHref = () => {
+    try {
+      const url = new URL(href, window.location.origin);
+      const candidateRef = (refText || label || "").trim().replace(/\.{2,}|…/g, "");
+      if (candidateRef && !url.searchParams.has("ref")) {
+        url.searchParams.set("ref", candidateRef.slice(0, 140));
+      }
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return href;
+    }
+  };
+
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('[ChatPanel] navigating to:', href);
-    window.location.href = href;
+    window.location.href = buildJumpHref();
   };
 
   return (
@@ -51,11 +65,39 @@ function InlineRef({
 }
 
 /** 解析 [[REF:/path/to/article#anchor|缩写内容]] 格式的内联引用 */
-function parseInlineRefs(content: string): React.ReactNode[] {
+function parseInlineRefs(content: string, sources?: Source[]): React.ReactNode[] {
   const refPattern = /\[\[REF:([^|\]]+)\|([^\]]+)\]\]/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
+
+  const resolveRefText = (href: string, label: string) => {
+    if (!sources || sources.length === 0) return label;
+
+    try {
+      const url = new URL(href, window.location.origin);
+      const pathname = decodeURIComponent(url.pathname).replace(/\/+$/, "");
+      const hashAnchor = decodeURIComponent(url.hash.replace(/^#/, ""));
+
+      const matched = sources.find((s) => {
+        const sourcePath = decodeURIComponent(`/${s.category}/${s.slug}`).replace(/\/+$/, "");
+        if (sourcePath !== pathname) return false;
+        if (!hashAnchor) return true;
+        return (s.headingAnchor || "").trim() === hashAnchor;
+      });
+
+      if (matched?.contentPreview) return matched.contentPreview;
+      if (matched?.headingText) return matched.headingText;
+      if (matched?.sectionPath) return matched.sectionPath;
+
+      const loose = sources.find((s) => pathname.includes(`/${s.slug}`));
+      if (loose?.contentPreview) return loose.contentPreview;
+    } catch {
+      // ignore
+    }
+
+    return label;
+  };
 
   while ((match = refPattern.exec(content)) !== null) {
     if (match.index > lastIndex) {
@@ -67,7 +109,14 @@ function parseInlineRefs(content: string): React.ReactNode[] {
     const href = match[1]; // 完整链接，如 /article/react-hooks#usestate基础用法
     const label = match[2]; // 缩写内容
 
-    parts.push(<InlineRef key={`ref-${match.index}`} href={href} label={label} />);
+    parts.push(
+      <InlineRef
+        key={`ref-${match.index}`}
+        href={href}
+        label={label}
+        refText={resolveRefText(href, label)}
+      />
+    );
 
     lastIndex = match.index + match[0].length;
   }
@@ -111,12 +160,8 @@ function MarkdownText({ text }: { text: string }) {
 }
 
 /** 消息内容渲染：支持内联引用和 Markdown */
-function MessageContent({ content }: { content: string }) {
-  return (
-    <span className="whitespace-pre-wrap">
-      {parseInlineRefs(content)}
-    </span>
-  );
+function RichMessageContent({ content, sources }: { content: string; sources?: Source[] }) {
+  return <span className="whitespace-pre-wrap">{parseInlineRefs(content, sources)}</span>;
 }
 
 export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
@@ -290,7 +335,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
                 msg.role === "user" ? "bg-[var(--accent)] text-white" : "bg-[var(--card-hover)] text-[var(--text-1)]"
               }`}
             >
-              <MessageContent content={msg.content} />
+              <RichMessageContent content={msg.content} sources={msg.sources} />
               {msg.role === "assistant" && isLoading && idx === messages.length - 1 && !msg.content && (
                 <span className="inline-block animate-pulse text-[var(--text-3)]">思考中...</span>
               )}

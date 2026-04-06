@@ -67,6 +67,7 @@ function extractTags(metadata: Record<string, unknown>): string[] {
  */
 export function generateSiteStructureChunks(
   allContent: SiteContentItem[],
+  categoryLabels?: Record<string, string>,
 ): GeneratedChunk[] {
   const result: GeneratedChunk[] = [];
 
@@ -98,7 +99,7 @@ export function generateSiteStructureChunks(
   // ---- 1. 站点概览分块 ----
   const categoryDescriptions: string[] = [];
   for (const [category, items] of categoryMap) {
-    const label = CATEGORY_LABELS[category] || category;
+    const label = categoryLabels?.[category] || CATEGORY_LABELS[category] || category;
     const unit = CATEGORY_UNITS[category] || '个';
     categoryDescriptions.push(`${label}(${items.length}${unit})`);
   }
@@ -122,7 +123,7 @@ export function generateSiteStructureChunks(
 
   // ---- 2. 分类详情分块 ----
   for (const [category, items] of categoryMap) {
-    const label = CATEGORY_LABELS[category] || category;
+    const label = categoryLabels?.[category] || CATEGORY_LABELS[category] || category;
     const unit = CATEGORY_UNITS[category] || '个';
 
     const titleList = items

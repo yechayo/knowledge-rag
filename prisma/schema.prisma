@@ -41,27 +41,27 @@ model Image {
   data      Bytes
   mimeType  String
   contentId String?
-  content   Content? @relation(fields: [contentId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  content   Content? @relation(fields: [contentId], references: [id], onDelete: Cascade)
 }
 
 model Chunk {
-  id              String                 @id @default(cuid())
-  content         String
-  contentHash     String
-  embedding       Unsupported("vector")?
-  contentId       String
-  createdAt       DateTime               @default(now())
-  parent          Content                @relation("ChunkToContent", fields: [contentId], references: [id], onDelete: Cascade)
-  chunkType       String                 @default("content_body")
-  headingLevel    Int?
-  headingAnchor   String?
-  headingText     String?
-  sourceTitle     String?
-  sourceSlug      String?
-  sourceCategory  String?
-  sourceTags      Json                   @default("[]")
-  sectionPath     String?
+  id             String                 @id @default(cuid())
+  content        String
+  contentHash    String
+  embedding      Unsupported("vector")?
+  contentId      String
+  createdAt      DateTime               @default(now())
+  chunkType      String                 @default("content_body")
+  headingAnchor  String?
+  headingLevel   Int?
+  headingText    String?
+  sectionPath    String?
+  sourceCategory String?
+  sourceSlug     String?
+  sourceTags     Json                   @default("[]")
+  sourceTitle    String?
+  parent         Content                @relation("ChunkToContent", fields: [contentId], references: [id], onDelete: Cascade)
 
   @@index([contentId])
   @@index([contentHash])

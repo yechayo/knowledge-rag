@@ -12,6 +12,8 @@
 // 类型定义
 // ============================================================
 
+import { generateHeadingAnchor } from './heading-anchor';
+
 export type ChunkType = 'content_body' | 'content_meta' | 'toc_entry' | 'nav_structure';
 
 export interface GeneratedChunk {
@@ -103,17 +105,6 @@ function parseHeadings(body: string): ParsedHeading[] {
   }
 
   return headings;
-}
-
-/**
- * 生成标题锚点 ID
- * 与 TocWidget 保持一致的逻辑：小写、去除特殊字符、空格替换为连字符
- */
-function generateHeadingAnchor(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\u4e00-\u9fff\s-]/g, '')
-    .replace(/\s+/g, '-');
 }
 
 /**

@@ -5,80 +5,98 @@ import { useEffect, useRef, useState } from "react";
 interface StatItem {
   label: string;
   value: number;
-  suffix?: string;
 }
 
-const defaultStats: StatItem[] = [
-  { label: "运行天数", value: 365 },
-  { label: "文章数", value: 42 },
-  { label: "标签数", value: 18 },
-  { label: "项目数", value: 6 },
+const FALLBACK: StatItem[] = [
+  { label: "运行天数", value: 0 },
+  { label: "文章数", value: 0 },
+  { label: "标签数", value: 0 },
+  { label: "总浏览", value: 0 },
 ];
 
-function useCountUp(target: number, duration = 1200) {
+function StatCountUp({ value, label }: { value: number; label: string }) {
   const [count, setCount] = useState(0);
-  const ref = useRef<HTMLElement>(null);
-  const hasAnimated = useRef(false);
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    if (!Number.isFinite(value) || value < 0) {
+      setCount(0);
+      return;
+    }
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !hasAnimated.current) {
-          hasAnimated.current = true;
-          const start = performance.now();
-          const animate = (now: number) => {
-            const elapsed = now - start;
-            const progress = Math.min(elapsed / duration, 1);
-            // Ease out cubic
-            const eased = 1 - Math.pow(1 - progress, 3);
-            setCount(Math.floor(eased * target));
-            if (progress < 1) {
-              requestAnimationFrame(animate);
-            } else {
-              setCount(target);
-            }
-          };
-          requestAnimationFrame(animate);
-        }
-      },
-      { threshold: 0.5 }
-    );
+    const start = performance.now();
+    const animate = (now: number) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / 1200, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(eased * value));
 
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [target, duration]);
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(animate);
+      } else {
+        setCount(value);
+      }
+    };
 
-  return { count, ref };
+    rafRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, [value]);
+
+  return (
+    <div className="text-center py-2">
+      <span
+        className="text-2xl font-bold tabular-nums"
+        style={{ color: "var(--text-1)" }}
+      >
+        {count}
+      </span>
+      <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>
+        {label}
+      </p>
+    </div>
+  );
 }
 
 export default function StatsCard() {
-  const stats = defaultStats.map((stat) => {
-    const { count, ref } = useCountUp(stat.value);
-    return { ...stat, count, ref };
-  });
+  const [stats, setStats] = useState<StatItem[]>(FALLBACK);
+
+  useEffect(() => {
+    fetch("/api/stats", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("stats api failed"))))
+      .then((data) => {
+        const daysSinceCreation = Number(data.daysSinceCreation ?? 0);
+        const totalArticles = Number(data.totalArticles ?? 0);
+        const totalProjects = Number(data.totalProjects ?? 0);
+        const totalNotes = Number(data.totalNotes ?? 0);
+        const totalTags = Number(data.totalTags ?? 0);
+        const totalViews = Number(data.totalViews ?? 0);
+
+        setStats([
+          { label: "运行天数", value: Number.isFinite(daysSinceCreation) ? daysSinceCreation : 0 },
+          {
+            label: "文章数",
+            value:
+              (Number.isFinite(totalArticles) ? totalArticles : 0) +
+              (Number.isFinite(totalProjects) ? totalProjects : 0) +
+              (Number.isFinite(totalNotes) ? totalNotes : 0),
+          },
+          { label: "标签数", value: Number.isFinite(totalTags) ? totalTags : 0 },
+          { label: "总浏览", value: Number.isFinite(totalViews) ? totalViews : 0 },
+        ]);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="card h-full flex flex-col justify-center">
       <div className="grid grid-cols-2 gap-4">
         {stats.map((stat) => (
-          <div key={stat.label} className="text-center py-2">
-            <span
-              ref={stat.ref}
-              className="text-2xl font-bold tabular-nums"
-              style={{ color: "var(--text-1)" }}
-            >
-              {stat.count}
-            </span>
-            <p
-              className="text-xs mt-1"
-              style={{ color: "var(--text-3)" }}
-            >
-              {stat.label}
-            </p>
-          </div>
+          <StatCountUp key={stat.label} value={stat.value} label={stat.label} />
         ))}
       </div>
     </div>

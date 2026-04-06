@@ -75,7 +75,17 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. 删除所有现有分块
+    // 2. 读取分类配置
+    const categoryConfig = await prisma.siteConfig.findUnique({ where: { key: 'siteCategories' } });
+    let categoryLabelMap: Record<string, string> = {};
+    if (categoryConfig) {
+      try {
+        const cats = JSON.parse(categoryConfig.value) as { key: string; label: string }[];
+        for (const c of cats) categoryLabelMap[c.key] = c.label;
+      } catch { /* ignore */ }
+    }
+
+    // 3. 删除所有现有分块
     await prisma.chunk.deleteMany({});
 
     // 3. 使用事务：重建所有内容的分块
@@ -157,7 +167,7 @@ export async function POST(req: Request) {
         metadata: (c.metadata as Record<string, unknown>) || {},
       }));
 
-      const navChunks = generateSiteStructureChunks(siteContentItems);
+      const navChunks = generateSiteStructureChunks(siteContentItems, categoryLabelMap);
 
       let navStructureChunks = 0;
 

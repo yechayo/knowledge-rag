@@ -211,7 +211,8 @@ export default function InlineEditor({ content, onChange, editable = true }: Inl
             ref={imageInputRef}
             type="file"
             accept="image/*"
-            className="hidden"
+            className="absolute opacity-0 w-0 h-0 overflow-hidden pointer-events-none"
+            tabIndex={-1}
             onChange={handleImageUpload}
           />
 

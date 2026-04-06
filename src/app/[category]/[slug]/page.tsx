@@ -10,7 +10,9 @@ import Sidebar from "@/components/detail/Sidebar";
 import ArticleBody from "@/components/detail/ArticleBody";
 import InlineEditor from "@/components/editor/InlineEditor";
 import { useAdmin } from "@/hooks/useAdmin";
+import { useCategories } from "@/hooks/useCategories";
 import { signOut } from "next-auth/react";
+import { generateHeadingAnchor } from "@/lib/heading-anchor";
 
 interface ContentData {
   id: string;
@@ -49,12 +51,65 @@ function estimateReadingTime(body: string): number {
   return Math.max(1, Math.ceil(chineseChars / 300 + englishWords / 200));
 }
 
-const categoryLabels: Record<string, string> = {
-  article: "文章",
-  project: "项目",
-  note: "笔记",
-  page: "页面",
-};
+function normalizeText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[，。！？、；：,.!?;:\-_'"`~()[\]{}<>]/g, "")
+    .replace(/\.{2,}|…/g, "");
+}
+
+function findHeadingByHash(hash: string): HTMLElement | null {
+  if (typeof window === "undefined") return null;
+
+  const id = decodeURIComponent(hash.replace(/^#/, "")).trim();
+  if (!id) return null;
+
+  const byId = document.getElementById(id);
+  if (byId) return byId;
+
+  const normalizedHash = generateHeadingAnchor(id);
+  const headings = Array.from(document.querySelectorAll(".markdown-content h2, .markdown-content h3"));
+  for (const node of headings) {
+    const el = node as HTMLElement;
+    const normalizedId = generateHeadingAnchor(el.id || "");
+    const normalizedText = generateHeadingAnchor(el.textContent || "");
+    if (normalizedId === normalizedHash || normalizedText === normalizedHash) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+function findElementByRefText(refText: string): HTMLElement | null {
+  if (typeof window === "undefined") return null;
+
+  const normalizedRef = normalizeText(refText);
+  if (!normalizedRef) return null;
+
+  const candidates = Array.from(
+    document.querySelectorAll(
+      ".markdown-content h2, .markdown-content h3, .markdown-content p, .markdown-content li, .markdown-content blockquote, .markdown-content pre"
+    )
+  ) as HTMLElement[];
+
+  let best: HTMLElement | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const el of candidates) {
+    const text = normalizeText(el.textContent || "");
+    if (!text) continue;
+    const idx = text.indexOf(normalizedRef);
+    if (idx >= 0 && idx < bestScore) {
+      best = el;
+      bestScore = idx;
+      if (idx === 0) break;
+    }
+  }
+
+  return best;
+}
 
 export default function DetailPage() {
   const { category, slug } = useParams<{ category: string; slug: string }>();
@@ -71,50 +126,44 @@ export default function DetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [editCategory, setEditCategory] = useState("");
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [showTopBtn, setShowTopBtn] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const { categories: allCategories, categoryLabels } = useCategories();
 
-  // 高亮指定标题文字颜色（基于 content 状态驱动）
-  const highlightedRef = useRef(false);
+  const jumpJobRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!content || highlightedRef.current) return;
-
+  const tryJumpToReference = useCallback(() => {
     const hash = window.location.hash;
-    if (!hash) return;
+    const refText = searchParams.get("ref") || "";
 
-    const id = decodeURIComponent(hash.slice(1));
-    if (!id) return;
+    let attempts = 0;
+    const maxAttempts = 12;
 
-    highlightedRef.current = true;
+    const run = () => {
+      const byHash = hash ? findHeadingByHash(hash) : null;
+      if (byHash) {
+        byHash.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
 
-    const timer = setTimeout(() => {
-      const el = document.getElementById(id);
-      if (!el) return;
+      const byRef = refText ? findElementByRefText(refText) : null;
+      if (byRef) {
+        byRef.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
 
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        jumpJobRef.current = window.setTimeout(run, 180);
+      }
+    };
 
-      // 高亮文字颜色 + 底部标记线
-      el.style.color = '#f59e0b';
-      el.style.borderBottom = '3px solid #f59e0b';
-      el.style.transition = 'color 0.3s, border-bottom-color 0.3s';
-
-      setTimeout(() => {
-        el.style.color = '#fbbf24';
-        el.style.borderBottomColor = '#fbbf24';
-      }, 1200);
-      setTimeout(() => {
-        el.style.color = '';
-        el.style.borderBottom = '';
-        el.style.transition = '';
-      }, 2500);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [content]);
+    run();
+  }, [searchParams]);
 
   // 获取文章内容
   useEffect(() => {
@@ -142,51 +191,27 @@ export default function DetailPage() {
     fetchContent();
   }, [slug]);
 
+  useEffect(() => {
+    if (!content) return;
+    tryJumpToReference();
+
+    return () => {
+      if (jumpJobRef.current !== null) {
+        clearTimeout(jumpJobRef.current);
+      }
+    };
+  }, [content, tryJumpToReference]);
+
   // ?edit=true 自动进入编辑模式
   useEffect(() => {
     if (content && searchParams.get("edit") === "true" && !isEditing) {
       setEditBody(content.body);
+      setEditCategory(content.category);
       setIsEditing(true);
       // 清除 URL 中的 edit 参数
       router.replace(`/${category}/${slug}`, { scroll: false });
     }
   }, [content, searchParams]);
-  useEffect(() => {
-    function onHashChange() {
-      const hash = window.location.hash;
-      if (!hash) return;
-      highlightedRef.current = true; // 防止 content useEffect 重复触发
-
-      const id = decodeURIComponent(hash.slice(1));
-      if (!id) return;
-
-      setTimeout(() => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.style.backgroundColor = 'rgba(250, 204, 21, 0.7)';
-        el.style.boxShadow = 'inset 0 0 0 2px rgba(250, 204, 21, 0.9)';
-        el.style.borderRadius = '4px';
-        el.style.transition = 'background-color 0.3s, box-shadow 0.3s';
-        setTimeout(() => {
-          el.style.backgroundColor = 'rgba(250, 204, 21, 0.35)';
-          el.style.boxShadow = 'inset 0 0 0 2px rgba(250, 204, 21, 0.5)';
-        }, 800);
-        setTimeout(() => {
-          el.style.backgroundColor = 'rgba(250, 204, 21, 0.15)';
-          el.style.boxShadow = 'inset 0 0 0 1px rgba(250, 204, 21, 0.3)';
-        }, 1600);
-        setTimeout(() => {
-          el.style.backgroundColor = '';
-          el.style.boxShadow = '';
-          el.style.borderRadius = '';
-          el.style.transition = '';
-        }, 2500);
-      }, 500);
-    }
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
 
   useEffect(() => {
     function onScroll() {
@@ -217,6 +242,7 @@ export default function DetailPage() {
     if (content) {
       setEditTitle(content.title);
       setEditBody(content.body);
+      setEditCategory(content.category);
       setIsEditing(true);
     }
   }, [content]);
@@ -238,11 +264,20 @@ export default function DetailPage() {
       const res = await fetch(`/api/content/${content.id}/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editTitle, body: editBody }),
+        body: JSON.stringify({ title: editTitle, body: editBody, category: editCategory }),
       });
       if (!res.ok) throw new Error("保存失败");
-      setContent({ ...content, title: editTitle, body: editBody });
-      setSaveMsg("已保存");
+      const updatedContent = { ...content, title: editTitle, body: editBody, category: editCategory };
+      setContent(updatedContent);
+
+      // 分类变更时重新向量化索引
+      if (editCategory !== content.category) {
+        await fetch(`/api/content/${content.id}/publish`, { method: "POST" });
+        setSaveMsg("已保存并重新索引");
+        router.replace(`/${editCategory}/${slug}`, { scroll: false });
+      } else {
+        setSaveMsg("已保存");
+      }
     } catch {
       setSaveMsg("保存失败");
     } finally {
@@ -259,7 +294,11 @@ export default function DetailPage() {
       if (!res.ok) throw new Error("发布失败");
       setSaveMsg("已发布并索引");
       setIsEditing(false);
-      setContent({ ...content, body: editBody, status: "published" });
+      setContent({ ...content, body: editBody, category: editCategory, status: "published" });
+      // 分类变更后跳转到新 URL
+      if (editCategory !== content.category) {
+        router.replace(`/${editCategory}/${slug}`, { scroll: false });
+      }
     } catch {
       setSaveMsg("发布失败");
     } finally {
@@ -352,10 +391,7 @@ export default function DetailPage() {
             {/* Banner */}
             <div className="rounded-2xl overflow-hidden mb-6" style={{ border: "1px solid var(--border)" }}>
               {/* Cover Image */}
-              <div
-                className="relative h-[200px] sm:h-[260px] group cursor-pointer"
-                onClick={() => isEditing && coverInputRef.current?.click()}
-              >
+              <div className="relative h-[200px] sm:h-[260px] group">
                 <Image
                   src={content.metadata?.coverImage || `https://picsum.photos/seed/${content.id}/1200/400`}
                   alt={content.title}
@@ -364,48 +400,68 @@ export default function DetailPage() {
                   sizes="(max-width: 1024px) 100vw, 66vw"
                   priority
                 />
-                {isEditing && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-black/60 backdrop-blur-sm">更换封面</span>
-                  </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
                 <input
+                  id="cover-upload"
                   ref={coverInputRef}
                   type="file"
                   accept="image/*"
                   className="hidden"
                   onChange={handleCoverUpload}
                 />
-                <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex flex-wrap items-center gap-2 mb-3">
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.2)", color: "#fff", backdropFilter: "blur(4px)" }}>
-                      {categoryLabel}
-                    </span>
-                    {tags.map((tag: string) => (
-                      <span key={tag} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(4px)" }}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  {isEditing ? (
-                    <input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      className="text-2xl sm:text-3xl font-bold mb-2 leading-tight bg-white/20 text-white rounded-lg px-3 py-1 outline-none placeholder-white/50 focus:bg-white/30"
-                      placeholder="输入标题..."
-                    />
-                  ) : (
-                    <h1 className="text-2xl sm:text-3xl font-bold mb-2 leading-tight text-white">
-                      {content.title}
-                    </h1>
-                  )}
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
-                    <span>{formatDate(content.createdAt)}</span>
-                    <span>{readingTime} 分钟阅读</span>
-                    <span>{content.viewCount} 次浏览</span>
+                {/* 文本区域（父，最顶层 z-30） > 渐变遮罩（子） */}
+                <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8 z-30">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent -m-6 sm:-m-8 pointer-events-none" />
+                  <div className="relative z-10">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      {isEditing ? (
+                        <select
+                          value={editCategory}
+                          onChange={(e) => setEditCategory(e.target.value)}
+                          className="px-2.5 py-0.5 rounded-full text-xs font-medium outline-none cursor-pointer"
+                          style={{ background: "rgba(255,255,255,0.2)", color: "#fff", backdropFilter: "blur(4px)", border: "none", appearance: "auto" }}
+                        >
+                          {allCategories.map((c) => (
+                            <option key={c.key} value={c.key} style={{ color: "#000", background: "#fff" }}>
+                              {c.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.2)", color: "#fff", backdropFilter: "blur(4px)" }}>
+                          {categoryLabel}
+                        </span>
+                      )}
+                      {tags.map((tag: string) => (
+                        <span key={tag} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(4px)" }}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    {isEditing ? (
+                      <input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="text-2xl sm:text-3xl font-bold mb-2 leading-tight bg-white/20 text-white rounded-lg px-3 py-1 outline-none placeholder-white/50 focus:bg-white/30"
+                        placeholder="输入标题..."
+                      />
+                    ) : (
+                      <h1 className="text-2xl sm:text-3xl font-bold mb-2 leading-tight text-white">
+                        {content.title}
+                      </h1>
+                    )}
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
+                      <span>{formatDate(content.createdAt)}</span>
+                      <span>{readingTime} 分钟阅读</span>
+                      <span>{content.viewCount} 次浏览</span>
+                    </div>
                   </div>
                 </div>
+                {/* 编辑模式：更换封面 */}
+                {isEditing && (
+                  <label htmlFor="cover-upload" className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-20">
+                    <span className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-black/60 backdrop-blur-sm">更换封面</span>
+                  </label>
+                )}
               </div>
             </div>
 
@@ -484,7 +540,7 @@ export default function DetailPage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => signOut({ callbackUrl: "/" })}
+                onClick={() => signOut({ callbackUrl: `/${category}/${slug}` })}
                 className="px-3 py-2 rounded-lg text-sm transition-colors"
                 style={{ color: "var(--text-3)" }}
                 title="退出登录"

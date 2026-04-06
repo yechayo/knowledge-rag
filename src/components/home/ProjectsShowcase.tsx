@@ -4,61 +4,42 @@ import { useEffect, useState } from "react";
 
 interface Project {
   id: string;
-  name: string;
+  title: string;
   icon: string;
   description?: string;
-  href?: string;
+  href: string;
+  viewCount: number;
 }
 
-const defaultProjects: Project[] = [
-  {
-    id: "1",
-    name: "KnowledgeRag",
-    icon: "KR",
-    description: "个人知识管理与 RAG 问答平台",
-    href: "/project",
-  },
-  {
-    id: "2",
-    name: "Blog Engine",
-    icon: "BE",
-    description: "基于 Next.js 的博客引擎",
-    href: "/project",
-  },
-  {
-    id: "3",
-    name: "Dev Toolkit",
-    icon: "DT",
-    description: "开发者工具集合",
-    href: "/project",
-  },
-];
-
 export default function ProjectsShowcase() {
-  const [projects, setProjects] = useState<Project[]>(defaultProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
-    fetch("/api/content?category=project&status=published")
+    fetch("/api/content?category=project&status=published&limit=3")
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data.items) && data.items.length > 0) {
           setProjects(
-            data.slice(0, 3).map((item: Record<string, string>) => ({
-              id: item.id,
-              name: item.title || item.name,
-              icon: (item.title || item.name || "P").slice(0, 2).toUpperCase(),
-              description: item.description,
-              href: "/project",
-            }))
+            data.items.map((item: Record<string, unknown>) => {
+              const title = (item.title as string) || "项目";
+              return {
+                id: item.id as string,
+                title,
+                icon: title.slice(0, 2).toUpperCase(),
+                description: ((item.metadata as Record<string, unknown>)?.description as string) || "",
+                href: `/project/${item.slug as string}`,
+                viewCount: (item.viewCount as number) || 0,
+              };
+            })
           );
         }
       })
-      .catch(() => {
-        // Use defaults
-      });
+      .catch(() => {});
   }, []);
 
   const rotations = [-3, 2, -2];
+
+  if (projects.length === 0) return null;
 
   return (
     <div className="card h-full flex items-center justify-center p-6">
@@ -97,7 +78,7 @@ export default function ProjectsShowcase() {
               className="text-sm font-semibold text-center"
               style={{ color: "var(--text-1)" }}
             >
-              {project.name}
+              {project.title}
             </span>
             {project.description && (
               <span
@@ -107,6 +88,9 @@ export default function ProjectsShowcase() {
                 {project.description}
               </span>
             )}
+            <span className="text-xs mt-2" style={{ color: "var(--text-3)" }}>
+              {project.viewCount} 次浏览
+            </span>
           </a>
         ))}
       </div>

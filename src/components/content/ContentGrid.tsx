@@ -22,9 +22,10 @@ interface ContentItem {
 interface ContentGridProps {
   items: ContentItem[];
   isAdmin?: boolean;
+  categoryLabels?: Record<string, string>;
 }
 
-export default function ContentGrid({ items, isAdmin = false }: ContentGridProps) {
+export default function ContentGrid({ items, isAdmin = false, categoryLabels }: ContentGridProps) {
   if (items.length === 0) return null;
 
   return (
@@ -36,6 +37,7 @@ export default function ContentGrid({ items, isAdmin = false }: ContentGridProps
             title={item.title}
             slug={item.slug}
             category={item.category}
+            categoryLabel={categoryLabels?.[item.category]}
             metadata={item.metadata}
             createdAt={item.createdAt}
             viewCount={item.viewCount}

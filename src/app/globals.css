@@ -123,6 +123,7 @@ body {
 .markdown-content th { background: var(--card-hover); font-weight: 600; }
 .markdown-content img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1rem 0; }
 
+/* 引用跳转高光 */
 /* ========== Homepage Layout Styles ========== */
 
 /* Background blobs */
