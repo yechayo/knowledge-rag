@@ -1,5 +1,5 @@
 import { Pool } from 'pg'
-import { PrismaClient } from '../../node_modules/@prisma/client/.prisma/client'
+import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 const connectionString = process.env.DATABASE_URL!;
