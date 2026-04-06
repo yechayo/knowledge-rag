@@ -365,7 +365,8 @@ body {
 @media (max-width: 900px) {
   .row-1 { grid-template-columns: 1fr; }
   .row-2 { grid-template-columns: 1fr; }
-  .shell { padding: 0 16px; }
+  .shell { padding: 0 16px; height: auto; min-height: 100vh; }
+  .cards-area { justify-content: flex-start; padding: 20px 0; }
 }
 
 /* ========== Heading Highlight Animation ========== */
