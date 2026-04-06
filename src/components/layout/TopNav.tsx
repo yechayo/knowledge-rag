@@ -15,7 +15,6 @@ const navItems = [
 export default function TopNav() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [categoryOpen, setCategoryOpen] = useState(false);
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -28,8 +27,8 @@ export default function TopNav() {
         <nav
           className="flex items-center justify-between h-14 rounded-xl mt-3 px-4 sm:px-6"
           style={{
-            background: "var(--card)",
-            border: "1px solid var(--border)",
+            background: "transparent",
+            border: "none",
             backdropFilter: "blur(12px)",
             WebkitBackdropFilter: "blur(12px)",
           }}
@@ -45,60 +44,6 @@ export default function TopNav() {
 
           {/* Center: Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
-            {/* 分类 dropdown */}
-            <div
-              className="relative"
-              onMouseEnter={() => setCategoryOpen(true)}
-              onMouseLeave={() => setCategoryOpen(false)}
-            >
-              <button
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  isActive("/article") || isActive("/project") || isActive("/note")
-                    ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
-                    : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
-                }`}
-              >
-                分类
-                <svg
-                  className="inline-block w-3.5 h-3.5 ml-1"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-
-              {categoryOpen && (
-                <div
-                  className="absolute top-full left-0 mt-1 w-36 rounded-lg py-1 shadow-lg"
-                  style={{
-                    background: "var(--card)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  {navItems.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`block px-3 py-2 text-sm transition-colors ${
-                        isActive(item.href)
-                          ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
-                          : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {navItems.map((item) => (
               <Link
                 key={item.href}
