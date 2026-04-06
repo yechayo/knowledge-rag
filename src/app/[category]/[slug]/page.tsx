@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import TopNav from "@/components/layout/TopNav";
 import Sidebar from "@/components/detail/Sidebar";
 import ArticleBody from "@/components/detail/ArticleBody";
 import InlineEditor from "@/components/editor/InlineEditor";
 import { useAdmin } from "@/hooks/useAdmin";
+import { signOut } from "next-auth/react";
 
 interface ContentData {
   id: string;
@@ -68,6 +70,15 @@ export default function DetailPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [showTopBtn, setShowTopBtn] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setShowTopBtn(window.scrollY > 400);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     if (!slug) return;
@@ -210,30 +221,38 @@ export default function DetailPage() {
           {/* Main Content */}
           <main className="flex-1 min-w-0">
             {/* Banner */}
-            <div
-              className="rounded-2xl p-6 sm:p-8 mb-6"
-              style={{
-                background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08))",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
-                  {categoryLabel}
-                </span>
-                {tags.map((tag: string) => (
-                  <span key={tag} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "var(--card)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-bold mb-3 leading-tight" style={{ color: "var(--text-1)" }}>
-                {content.title}
-              </h1>
-              <div className="flex flex-wrap items-center gap-4 text-sm" style={{ color: "var(--text-3)" }}>
-                <span>{formatDate(content.createdAt)}</span>
-                <span>{readingTime} 分钟阅读</span>
-                <span>{content.viewCount} 次浏览</span>
+            <div className="rounded-2xl overflow-hidden mb-6" style={{ border: "1px solid var(--border)" }}>
+              {/* Cover Image */}
+              <div className="relative h-[200px] sm:h-[260px]">
+                <Image
+                  src={content.metadata?.coverImage || `https://picsum.photos/seed/${content.id}/1200/400`}
+                  alt={content.title}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 1024px) 100vw, 66vw"
+                  priority
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.2)", color: "#fff", backdropFilter: "blur(4px)" }}>
+                      {categoryLabel}
+                    </span>
+                    {tags.map((tag: string) => (
+                      <span key={tag} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(4px)" }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-bold mb-2 leading-tight text-white">
+                    {content.title}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
+                    <span>{formatDate(content.createdAt)}</span>
+                    <span>{readingTime} 分钟阅读</span>
+                    <span>{content.viewCount} 次浏览</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -270,8 +289,28 @@ export default function DetailPage() {
               </div>
             )}
           </main>
+          {/* 底部留白，避免被 admin 浮动栏遮挡 */}
+          {isAdmin && <div className="h-16" />}
         </div>
       </div>
+
+      {/* Back to top */}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className="fixed bottom-[4.5rem] right-6 z-40 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300"
+        style={{
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          opacity: showTopBtn ? 1 : 0,
+          pointerEvents: showTopBtn ? "auto" : "none",
+          transform: showTopBtn ? "translateY(0)" : "translateY(16px)",
+        }}
+        aria-label="回到顶部"
+      >
+        <svg className="w-5 h-5" style={{ color: "var(--text-2)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
 
       {/* Admin floating edit bar */}
       {isAdmin && (
@@ -291,6 +330,14 @@ export default function DetailPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => signOut({ callbackUrl: "/" })}
+                className="px-3 py-2 rounded-lg text-sm transition-colors"
+                style={{ color: "var(--text-3)" }}
+                title="退出登录"
+              >
+                退出
+              </button>
               {!isEditing ? (
                 <button
                   onClick={enterEditMode}

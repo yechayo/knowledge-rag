@@ -45,18 +45,19 @@ export default function CategoryPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [tags, setTags] = useState<string[]>([]);
+  const [tagCounts, setTagCounts] = useState<Record<string, number>>({});
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  // Sync URL search params to state on mount
+  // Sync URL search params to state on mount and when URL changes
   useEffect(() => {
     const pageParam = searchParams.get("page");
     const tagParam = searchParams.get("tag");
     setCurrentPage(pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1);
     setActiveTag(tagParam);
     setInitialized(true);
-  }, []);
+  }, [searchParams]);
 
   // Fetch data
   const fetchData = useCallback(
@@ -78,16 +79,6 @@ export default function CategoryPage() {
         setItems(data.items || []);
         setTotalPages(data.totalPages || 0);
         setCurrentPage(data.page || page);
-
-        // Extract unique tags from all items
-        const allTags = new Set<string>();
-        (data.items || []).forEach((item: ContentItem) => {
-          (item.metadata?.tags || []).forEach((t: string) => allTags.add(t));
-        });
-        // Only update tags if we got a full set (page 1, no tag filter)
-        if (page === 1 && !tag) {
-          setTags(Array.from(allTags).sort());
-        }
       } catch (err) {
         console.error("Failed to fetch content:", err);
       } finally {
@@ -103,7 +94,7 @@ export default function CategoryPage() {
     fetchData(currentPage, activeTag);
   }, [initialized, currentPage, activeTag, fetchData]);
 
-  // Also fetch all tags once
+  // Also fetch all tags once for counts
   useEffect(() => {
     if (!category) return;
     async function fetchAllTags() {
@@ -114,10 +105,15 @@ export default function CategoryPage() {
         if (!res.ok) return;
         const data = await res.json();
         const allTags = new Set<string>();
+        const counts: Record<string, number> = {};
         (data.items || []).forEach((item: ContentItem) => {
-          (item.metadata?.tags || []).forEach((t: string) => allTags.add(t));
+          (item.metadata?.tags || []).forEach((t: string) => {
+            allTags.add(t);
+            counts[t] = (counts[t] || 0) + 1;
+          });
         });
         setTags(Array.from(allTags).sort());
+        setTagCounts(counts);
       } catch {
         // ignore
       }
@@ -171,6 +167,7 @@ export default function CategoryPage() {
               tags={tags}
               activeTag={activeTag}
               onTagChange={handleTagChange}
+              tagCounts={tagCounts}
             />
           </div>
         )}

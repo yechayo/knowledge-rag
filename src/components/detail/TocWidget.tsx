@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface TocItem {
   id: string;
@@ -14,6 +14,7 @@ interface TocWidgetProps {
 
 export default function TocWidget({ body }: TocWidgetProps) {
   const [activeId, setActiveId] = useState<string>("");
+  const tickingRef = useRef(false);
 
   const headings = useMemo<TocItem[]>(() => {
     // 从 Markdown 原文解析标题
@@ -33,53 +34,42 @@ export default function TocWidget({ body }: TocWidgetProps) {
     return items;
   }, [body]);
 
+  const updateActive = useCallback(() => {
+    // 找到当前最靠近视口顶部的标题
+    let closest: { id: string; top: number } | null = null;
+    for (const { id } of headings) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const top = el.getBoundingClientRect().top;
+      // 标题在导航栏下方（80px）且在视口上半部分
+      if (top <= 100) {
+        if (!closest || top > closest.top) {
+          closest = { id, top };
+        }
+      }
+    }
+    setActiveId(closest ? closest.id : headings[0]?.id || "");
+  }, [headings]);
+
   useEffect(() => {
     if (headings.length === 0) return;
 
-    // 给页面中已渲染的标题元素设置 id（marked 生成的标题默认没有 id）
-    headings.forEach(({ id, text, level }) => {
-      // 找到对应的 h2/h3 元素
-      const elements = document.querySelectorAll(`.markdown-content h${level}`);
-      for (const el of elements) {
-        if (el.textContent?.trim() === text && !el.id) {
-          el.id = id;
-          break;
-        }
+    // 初始化时设置一次
+    updateActive();
+
+    const onScroll = () => {
+      if (!tickingRef.current) {
+        tickingRef.current = true;
+        requestAnimationFrame(() => {
+          updateActive();
+          tickingRef.current = false;
+        });
       }
-    });
+    };
 
-    // IntersectionObserver 高亮当前阅读位置
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // 找到最上方可见的标题
-        const visible: { id: string; ratio: number }[] = [];
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            visible.push({
-              id: entry.target.id,
-              ratio: entry.intersectionRatio,
-            });
-          }
-        }
-        if (visible.length > 0) {
-          // 选择 ratio 最高的
-          visible.sort((a, b) => b.ratio - a.ratio);
-          setActiveId(visible[0].id);
-        }
-      },
-      {
-        rootMargin: "-80px 0px -60% 0px",
-        threshold: [0, 0.25, 0.5, 0.75, 1],
-      }
-    );
-
-    headings.forEach(({ id }) => {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [headings]);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [headings, updateActive]);
 
   if (headings.length === 0) return null;
 

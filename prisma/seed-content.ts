@@ -267,6 +267,453 @@ v4 使用 Oxide 引擎重写，构建速度提升了约 10 倍，开发体验更
 
 Tailwind CSS v4 是一次值得升级的重大更新，更快的构建速度和更简洁的配置方式让开发体验更上一层楼。`,
     },
+    {
+      title: '深入理解 React Server Components',
+      slug: 'react-server-components-deep-dive',
+      category: 'article',
+      status: 'published',
+      body: `## React Server Components 简介
+
+React Server Components（RSC）是 React 18 引入的一项重大特性，它允许组件在服务端渲染，从而带来更好的性能和用户体验。
+
+### 核心概念
+
+Server Components 是一种特殊的组件类型，它们：
+- 在服务端渲染，不发送到客户端
+- 可以直接访问数据库、文件系统等服务端资源
+- 不需要包含在客户端 bundle 中
+- 可以使用 async/await 进行数据获取
+
+### 与客户端组件的区别
+
+| 特性 | Server Components | Client Components |
+|------|------------------|-------------------|
+| 运行位置 | 服务端 | 客户端浏览器 |
+| bundle 大小 | 不增加客户端 bundle | 增加客户端 bundle |
+| 交互能力 | 无（纯展示） | 支持（useState、useEffect等） |
+| 数据获取 | 直接获取 | 需要通过 API |
+
+### 使用场景
+
+**适合 Server Components：**
+- 数据密集型组件（列表、表格）
+- 静态内容组件
+- 需要访问敏感资源的组件
+- 大型依赖库（如 Markdown 渲染器）
+
+**适合 Client Components：**
+- 需要用户交互的组件（按钮、表单）
+- 需要使用浏览器 API 的组件
+- 需要状态管理的组件
+
+### 最佳实践
+
+1. 默认使用 Server Components，只在必要时使用 Client Components
+2. 将交互逻辑封装到小的 Client Components 中
+3. 使用 Server Components 进行数据获取，通过 props 传递给 Client Components
+4. 合理使用 Suspense 处理加载状态
+
+## 实际应用示例
+
+以下是一个典型的 Server Component 使用场景：
+
+\`\`\`typescript
+// app/posts/page.tsx (Server Component)
+async function PostsList() {
+  const posts = await db.posts.findMany();
+
+  return (
+    <div>
+      {posts.map(post => (
+        <PostCard key={post.id} post={post} />
+      ))}
+    </div>
+  );
+}
+\`\`\`
+
+## 总结
+
+React Server Components 代表了 React 应用架构的未来方向。通过合理使用 Server 和 Client Components，我们可以构建出性能更好、用户体验更佳的应用。`,
+      metadata: {
+        tags: ['React', 'Server Components', '前端开发'],
+      },
+    },
+    {
+      title: 'TypeScript 高级类型技巧',
+      slug: 'typescript-advanced-type-techniques',
+      category: 'article',
+      status: 'published',
+      body: `## 前言
+
+TypeScript 的类型系统非常强大，掌握一些高级类型技巧可以让代码更加类型安全且易于维护。
+
+## 条件类型
+
+条件类型允许根据类型关系来选择类型：
+
+\`\`\`typescript
+type IsArray<T> = T extends any[] ? true : false;
+
+type Test1 = IsArray<string[]>; // true
+type Test2 = IsArray<string>; // false
+\`\`\`
+
+## 映射类型
+
+映射类型可以基于旧类型创建新类型：
+
+\`\`\`typescript
+type Readonly<T> = {
+  readonly [P in keyof T]: T[P];
+};
+
+type Partial<T> = {
+  [P in keyof T]?: T[P];
+};
+\`\`\`
+
+## 模板字面量类型
+
+TypeScript 4.1 引入了模板字面量类型：
+
+\`\`\`typescript
+type EventName<T extends string> = \`on\${Capitalize<T>}\`;
+
+type ClickEvent = EventName<'click'>; // 'onClick'
+\`\`\`
+
+## 递归类型
+
+递归类型可以定义嵌套结构：
+
+\`\`\`typescript
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+\`\`\`
+
+## 类型推断
+
+使用 \`infer\` 关键字进行类型推断：
+
+\`\`\`typescript
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+\`\`\`
+
+## 品牌类型
+
+品牌类型用于区分语义上不同但结构相同的类型：
+
+\`\`\`typescript
+type USD = number & { readonly __brand: 'USD' };
+type EUR = number & { readonly __brand: 'EUR' };
+
+function usd(amount: number): USD {
+  return amount as USD;
+}
+\`\`\`
+
+## 总结
+
+掌握这些高级类型技巧，可以让你的 TypeScript 代码更加健壮和可维护。`,
+      metadata: {
+        tags: ['TypeScript', '类型系统', '前端开发'],
+      },
+    },
+    {
+      title: 'PostgreSQL 性能优化实战',
+      slug: 'postgresql-performance-optimization',
+      category: 'article',
+      status: 'published',
+      body: `## 查询优化
+
+### 使用 EXPLAIN ANALYZE
+
+分析查询执行计划是优化的第一步：
+
+\`\`\`sql
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'test@example.com';
+\`\`\`
+
+关注以下指标：
+- 执行时间
+- 扫描行数
+- 是否使用了索引
+
+### 索引策略
+
+**何时创建索引：**
+- 频繁用于 WHERE、JOIN、ORDER BY 的列
+- 高选择性（唯一值多）的列
+- 避免在小表上创建索引
+
+**复合索引顺序：**
+将选择性高的列放在前面：
+
+\`\`\`sql
+CREATE INDEX idx_user_status_date ON users(status, created_at);
+\`\`\`
+
+## 连接池配置
+
+合理配置连接池可以提高并发性能：
+
+\`\`\`
+pool_min = 5
+pool_max = 20
+\`\`\`
+
+## 查询重写
+
+### 避免 SELECT *
+
+\`\`\`sql
+-- 不推荐
+SELECT * FROM users;
+
+-- 推荐
+SELECT id, name, email FROM users;
+\`\`\`
+
+### 使用 CTE 优化复杂查询
+
+\`\`\`sql
+WITH user_stats AS (
+  SELECT user_id, COUNT(*) as post_count
+  FROM posts
+  GROUP BY user_id
+)
+SELECT u.name, us.post_count
+FROM users u
+JOIN user_stats us ON u.id = us.user_id;
+\`\`\`
+
+## 表分区
+
+对大表进行分区可以显著提高查询性能：
+
+\`\`\`sql
+CREATE TABLE posts (
+  id SERIAL,
+  created_at TIMESTAMP
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE posts_2024 PARTITION OF posts
+  FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+\`\`\`
+
+## 总结
+
+PostgreSQL 性能优化需要综合考虑查询设计、索引策略、配置参数等多个方面。持续监控和分析是优化的关键。`,
+      metadata: {
+        tags: ['PostgreSQL', '数据库', '性能优化'],
+      },
+    },
+    {
+      title: 'Docker 容器化最佳实践',
+      slug: 'docker-containerization-best-practices',
+      category: 'article',
+      status: 'published',
+      body: `## 为什么选择 Docker
+
+Docker 通过容器化技术解决了"在我的机器上能运行"的问题，确保应用在任何环境中都能一致运行。
+
+### Docker 的核心优势
+
+- **环境一致性**：开发、测试、生产环境完全一致
+- **资源隔离**：进程、网络、文件系统隔离
+- **快速部署**：秒级启动，快速扩缩容
+- **版本管理**：镜像版本化管理，支持回滚
+
+## Dockerfile 最佳实践
+
+### 使用多阶段构建
+
+\`\`\`dockerfile
+# 构建阶段
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# 运行阶段
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY package*.json ./
+RUN npm ci --production
+CMD ["node", "dist/index.js"]
+\`\`\`
+
+### 优化镜像大小
+
+- 使用 alpine 基础镜像
+- 合并 RUN 指令减少层数
+- 清理不必要的文件
+- 使用 .dockerignore
+
+### 安全最佳实践
+
+- 不要以 root 用户运行应用
+- 使用特定版本标签而非 latest
+- 定期扫描镜像漏洞
+- 最小化安装依赖
+
+## Docker Compose 使用
+
+Docker Compose 适合定义和运行多容器应用：
+
+\`\`\`yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=secret
+
+volumes:
+  postgres_data:
+\`\`\`
+
+## 生产环境部署
+
+生产环境需要注意：
+- 配置资源限制
+- 使用健康检查
+- 配置日志驱动
+- 设置重启策略
+
+## 总结
+
+Docker 容器化已成为现代应用部署的标准实践。遵循最佳实践可以构建更安全、高效的容器化应用。`,
+      metadata: {
+        tags: ['Docker', '容器化', 'DevOps'],
+      },
+    },
+    {
+      title: 'Git 工作流与团队协作',
+      slug: 'git-workflow-team-collaboration',
+      category: 'article',
+      status: 'published',
+      body: `## Git 工作流概述
+
+选择合适的 Git 工作流对团队协作效率至关重要。
+
+### 常见工作流模式
+
+#### 1. Git Flow
+
+适合有明确发布周期的项目：
+
+- \`main\`：生产环境分支
+- \`develop\`：开发集成分支
+- \`feature/*\`：功能分支
+- \`release/*\`：发布分支
+- \`hotfix/*\`：紧急修复分支
+
+#### 2. GitHub Flow
+
+简化版工作流，适合持续部署：
+
+- \`main\` 始终可部署
+- 从 main 创建分支
+- 通过 Pull Request 合并
+- 合并后立即部署
+
+#### 3. GitLab Flow
+
+结合了 Git Flow 和 GitHub Flow 的优点：
+
+- 上游分支追踪下游分支
+- 支持环境和分支的对应关系
+- 更加灵活的分支策略
+
+## 分支管理最佳实践
+
+### 分支命名规范
+
+\`\`\`
+feature/add-user-authentication
+bugfix/login-error-handling
+hotfix/security-patch-2024
+release/v1.2.0
+\`\`\`
+
+### 提交信息规范
+
+使用 Conventional Commits 规范：
+
+\`\`\`
+feat: 添加用户登录功能
+fix: 修复支付页面验证错误
+docs: 更新 API 文档
+refactor: 重构数据访问层
+test: 添加用户服务测试
+\`\`\`
+
+## 代码审查流程
+
+### Pull Request 模板
+
+\`\`\`markdown
+## 变更说明
+简要描述本次变更的内容
+
+## 变更类型
+- [ ] 新功能
+- [ ] Bug 修复
+- [ ] 重构
+- [ ] 文档更新
+
+## 测试情况
+描述已完成的测试
+
+## 截图（如适用）
+添加相关截图
+\`\`\`
+
+### 审查要点
+
+- 代码质量和风格一致性
+- 逻辑正确性和边界情况
+- 测试覆盖是否充分
+- 文档是否同步更新
+
+## 冲突解决
+
+### 预防冲突
+
+- 保持分支短小精悍
+- 频繁同步上游分支
+- 及时沟通开发计划
+
+### 解决冲突步骤
+
+1. 更新本地分支
+2. 识别冲突文件
+3. 逐个解决冲突
+4. 测试验证
+5. 提交并推送
+
+## 总结
+
+良好的 Git 工作流和团队协作规范是项目成功的关键。选择适合团队规模和项目特点的工作流，并严格执行相关规范。`,
+      metadata: {
+        tags: ['Git', '团队协作', '工作流'],
+      },
+    },
   ];
 
   for (const article of articles) {

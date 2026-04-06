@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 
 interface ContentCardProps {
   id: string;
@@ -10,6 +11,7 @@ interface ContentCardProps {
   metadata: {
     tags?: string[];
     description?: string;
+    coverImage?: string;
     [key: string]: unknown;
   };
   createdAt: string;
@@ -19,29 +21,30 @@ interface ContentCardProps {
 
 const categoryConfig: Record<
   string,
-  { label: string; gradient: string; icon: string }
+  { label: string; icon: string }
 > = {
   article: {
     label: "文章",
-    gradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
     icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
   },
   project: {
     label: "项目",
-    gradient: "linear-gradient(135deg, #f59e0b, #ef4444)",
     icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z",
   },
   note: {
     label: "笔记",
-    gradient: "linear-gradient(135deg, #10b981, #06b6d4)",
     icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
   },
   page: {
     label: "页面",
-    gradient: "linear-gradient(135deg, #ec4899, #8b5cf6)",
     icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
   },
 };
+
+function getCoverImage(id: string, coverImage?: string): string {
+  if (coverImage) return coverImage;
+  return `https://picsum.photos/seed/${id}/600/300`;
+}
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -76,30 +79,20 @@ export default function ContentCard({
             border: "1px solid var(--border)",
           }}
         >
-          {/* Gradient Banner */}
-          <div
-            className="relative h-[140px] flex items-center justify-center"
-            style={{ background: config.gradient }}
-          >
-            <svg
-              className="w-12 h-12 text-white/80"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d={config.icon}
-              />
-            </svg>
-
+          {/* Cover Image */}
+          <div className="relative h-[140px] overflow-hidden">
+            <Image
+              src={getCoverImage(id, metadata.coverImage)}
+              alt={title}
+              fill
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            />
             {/* Category label */}
             <span
               className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-medium"
               style={{
-                background: "rgba(255,255,255,0.2)",
+                background: "rgba(0,0,0,0.4)",
                 color: "#fff",
                 backdropFilter: "blur(4px)",
               }}

@@ -14,7 +14,7 @@ interface SidebarProps {
 export default function Sidebar({ body, category, currentSlug }: SidebarProps) {
   return (
     <aside
-      className="hidden lg:block flex-shrink-0 overflow-y-auto"
+      className="hidden lg:block flex-shrink-0 overflow-y-auto sidebar-no-scrollbar"
       style={{
         width: "260px",
         position: "sticky",
