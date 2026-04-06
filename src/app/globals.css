@@ -185,6 +185,7 @@ body {
 .row { display: grid; gap: 14px; }
 .row-1 { grid-template-columns: 280px 1fr; }
 .row-2 { grid-template-columns: 1fr 1fr 280px; }
+.row > * { min-width: 0; overflow: hidden; }
 
 /* Base card */
 .card {
@@ -285,6 +286,68 @@ body {
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* ========== Skill Scroll Marquee ========== */
+
+.skill-scroll-track {
+  position: relative;
+  overflow: hidden !important;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.skill-scroll-inner {
+  display: flex;
+  gap: 12px;
+  animation: skill-scroll 25s linear infinite;
+  width: max-content;
+  position: relative;
+}
+
+.skill-scroll-inner {
+  display: flex;
+  gap: 12px;
+  animation: skill-scroll 25s linear infinite;
+  width: max-content;
+}
+
+/* 悬停暂停 */
+.skill-scroll-track:hover .skill-scroll-inner {
+  animation-play-state: paused;
+}
+
+@keyframes skill-scroll {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+.skill-scroll-offset {
+  animation-name: skill-scroll-offset;
+}
+
+@keyframes skill-scroll-offset {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+.skill-scroll-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  transition: all 0.25s;
+  cursor: pointer;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.skill-scroll-item:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.1);
+  background: var(--card-hover);
 }
 
 /* Responsive */

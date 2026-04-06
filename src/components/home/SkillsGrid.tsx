@@ -1,88 +1,81 @@
 "use client";
 
-import Link from "next/link";
-
 interface Skill {
   name: string;
-  color: string;
+  icon: string;
+  bg: string;
+  url: string;
 }
 
-const defaultSkills: Skill[] = [
-  { name: "React", color: "#61dafb" },
-  { name: "TypeScript", color: "#3178c6" },
-  { name: "Next.js", color: "#000000" },
-  { name: "PostgreSQL", color: "#4169e1" },
-  { name: "Python", color: "#3776ab" },
-  { name: "Docker", color: "#2496ed" },
-  { name: "Go", color: "#00add8" },
-  { name: "Redis", color: "#dc382d" },
+const row1: Skill[] = [
+  { name: "React", icon: "react", bg: "#20232A", url: "https://react.dev" },
+  { name: "TypeScript", icon: "typescript", bg: "#3178C6", url: "https://www.typescriptlang.org" },
+  { name: "Next.js", icon: "nextdotjs", bg: "#171717", url: "https://nextjs.org" },
+  { name: "OpenAI", icon: "openai", bg: "#412991", url: "https://openai.com" },
+  { name: "Python", icon: "python", bg: "#3776AB", url: "https://www.python.org" },
+  { name: "Docker", icon: "docker", bg: "#2496ED", url: "https://www.docker.com" },
+  { name: "智谱AI", icon: "zhipuai", bg: "#3E6BF0", url: "https://open.bigmodel.cn" },
+  { name: "Tailwind", icon: "tailwindcss", bg: "#06B6D4", url: "https://tailwindcss.com" },
 ];
+
+const row2: Skill[] = [
+  { name: "Go", icon: "go", bg: "#00ADD8", url: "https://go.dev" },
+  { name: "Redis", icon: "redis", bg: "#DC382D", url: "https://redis.io" },
+  { name: "Node.js", icon: "nodedotjs", bg: "#339933", url: "https://nodejs.org" },
+  { name: "PostgreSQL", icon: "postgresql", bg: "#336791", url: "https://www.postgresql.org" },
+  { name: "Git", icon: "git", bg: "#F05032", url: "https://git-scm.com" },
+  { name: "Flock", icon: "flock", bg: "#6C3FC5", url: "https://flock.io" },
+  { name: "Linux", icon: "linux", bg: "#FCC624", url: "https://www.kernel.org" },
+  { name: "Vercel", icon: "vercel", bg: "#171717", url: "https://vercel.com" },
+];
+
+const TEXT_ONLY = new Set(["openai", "zhipuai", "flock"]);
+
+function SkillRow({ skills, offset }: { skills: Skill[]; offset: boolean }) {
+  const items = [...skills, ...skills];
+  return (
+    <div className="skill-scroll-track">
+      <div className={`skill-scroll-inner ${offset ? "skill-scroll-offset" : ""}`}>
+        {items.map((skill, i) => (
+          <a
+            key={`${skill.icon}-${i}`}
+            href={skill.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="skill-scroll-item"
+            title={skill.name}
+            style={{ background: skill.bg }}
+          >
+            {TEXT_ONLY.has(skill.icon) ? (
+              <span className="text-white text-xs font-bold">
+                {skill.name.length <= 2 ? skill.name.toUpperCase() : skill.name.slice(0, 2).toUpperCase()}
+              </span>
+            ) : (
+              <img
+                src={`https://cdn.simpleicons.org/${skill.icon}/fff`}
+                alt={skill.name}
+                className="w-7 h-7"
+                loading="lazy"
+              />
+            )}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function SkillsGrid() {
   return (
-    <div className="card h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="card h-full flex flex-col" style={{ overflow: "hidden" }}>
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
           技能 &amp; 工具
         </h3>
-        <Link
-          href="/about"
-          className="flex items-center gap-1 text-xs transition-colors"
-          style={{ color: "var(--text-3)" }}
-          onMouseEnter={(e) => {
-            (e.target as HTMLElement).style.color = "var(--text-1)";
-          }}
-          onMouseLeave={(e) => {
-            (e.target as HTMLElement).style.color = "var(--text-3)";
-          }}
-        >
-          全部
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
       </div>
-
-      {/* Skills grid */}
-      <div className="grid grid-cols-4 gap-2 flex-1 content-center">
-        {defaultSkills.map((skill) => (
-          <div
-            key={skill.name}
-            className="skill-item flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-300 cursor-default"
-            style={{
-              border: "1px solid var(--border)",
-            }}
-            onMouseEnter={(e) => {
-              const el = e.currentTarget;
-              el.style.transform = "translateY(-3px)";
-              el.style.borderColor = "rgba(99,102,241,0.3)";
-              el.style.boxShadow = "0 4px 15px rgba(99,102,241,0.08)";
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget;
-              el.style.transform = "translateY(0)";
-              el.style.borderColor = "var(--border)";
-              el.style.boxShadow = "none";
-            }}
-          >
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold mb-2"
-              style={{
-                background: `${skill.color}18`,
-                color: skill.color,
-              }}
-            >
-              {skill.name.slice(0, 2).toUpperCase()}
-            </div>
-            <span
-              className="text-xs font-medium"
-              style={{ color: "var(--text-2)" }}
-            >
-              {skill.name}
-            </span>
-          </div>
-        ))}
+      <div className="flex-1 flex flex-col justify-center gap-2 min-w-0">
+        <SkillRow skills={row1} offset={false} />
+        <SkillRow skills={row2} offset={true} />
       </div>
     </div>
   );
