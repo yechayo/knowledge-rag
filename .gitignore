@@ -46,3 +46,6 @@ next-env.d.ts
 # local workspace files
 /uploads/
 /CLAUDE.md
+
+.vercel
+.env*.local

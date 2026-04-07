@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
@@ -8,10 +8,15 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { useCategories } from "@/hooks/useCategories";
 import CategoryManager from "@/components/admin/CategoryManager";
 
+// 直接显示在导航栏的分类
+const PRIMARY_CATEGORIES = ["article", "project", "note", "page"];
+
 export default function TopNav() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [showCatManager, setShowCatManager] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
   const { isAdmin } = useAdmin();
   const { categories } = useCategories();
 
@@ -22,8 +27,12 @@ export default function TopNav() {
       label: c.label,
       key: normalizePathPart(c.key),
       href: `/${normalizePathPart(c.key)}`,
+      primary: PRIMARY_CATEGORIES.includes(c.key.toLowerCase()),
     }))
     .filter((item) => item.key.length > 0);
+
+  const primaryItems = navItems.filter((i) => i.primary);
+  const moreItems = navItems.filter((i) => !i.primary);
 
   const currentTopSegment = normalizePathPart(pathname.split("/")[1] || "");
 
@@ -31,6 +40,31 @@ export default function TopNav() {
     if (!key) return pathname === "/";
     return currentTopSegment === key;
   };
+
+  // 点击外部关闭下拉
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [moreOpen]);
+
+  // 路由变化时关闭移动端菜单
+  useEffect(() => {
+    setMobileOpen(false);
+    setMoreOpen(false);
+  }, [pathname]);
+
+  const linkClass = (key: string) =>
+    `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+      isActive(key)
+        ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
+        : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
+    }`;
 
   return (
     <header className="sticky top-0 z-50 w-full">
@@ -46,28 +80,66 @@ export default function TopNav() {
         >
           {/* Left: Logo */}
           <Link href="/" className="flex-shrink-0">
-            <span
-              className="text-lg font-bold text-[var(--text-1)]"
-            >
+            <span className="text-lg font-bold text-[var(--text-1)]">
               yechayo
             </span>
           </Link>
 
-          {/* Center: Desktop Navigation */}
+          {/* Center: Primary Category Links (desktop) */}
           <div className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  isActive(item.key)
-                    ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
-                    : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
-                }`}
-              >
+            {primaryItems.map((item) => (
+              <Link key={item.href} href={item.href} className={linkClass(item.key)}>
                 {item.label}
               </Link>
             ))}
+
+            {/* "More" dropdown for extra categories */}
+            {moreItems.length > 0 && (
+              <div className="relative" ref={moreRef}>
+                <button
+                  onClick={() => setMoreOpen(!moreOpen)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1 ${
+                    moreItems.some((i) => isActive(i.key))
+                      ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
+                      : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
+                  }`}
+                >
+                  更多
+                  <svg
+                    className={`w-3.5 h-3.5 transition-transform ${moreOpen ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {moreOpen && (
+                  <div
+                    className="absolute top-full left-0 mt-2 rounded-xl p-1.5 shadow-lg min-w-[120px]"
+                    style={{
+                      background: "var(--card)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    {moreItems.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`block px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                          isActive(item.key)
+                            ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
+                            : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
+                        }`}
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right: Search + Theme Toggle */}
@@ -76,18 +148,8 @@ export default function TopNav() {
               className="p-2 rounded-lg text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)] transition-colors"
               aria-label="搜索"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </button>
             <ThemeToggle />
@@ -99,32 +161,12 @@ export default function TopNav() {
               aria-label="菜单"
             >
               {mobileOpen ? (
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               ) : (
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               )}
             </button>

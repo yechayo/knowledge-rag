@@ -13,6 +13,7 @@ interface Project {
 
 export default function ProjectsShowcase() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     fetch("/api/content?category=project&status=published&limit=3")
@@ -34,66 +35,78 @@ export default function ProjectsShowcase() {
           );
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
   const rotations = [-3, 2, -2];
 
-  if (projects.length === 0) return null;
-
+  // 加载完成后，如果没有项目也不隐藏卡片，保持占位
   return (
     <div className="card h-full flex items-center justify-center p-6">
-      <div className="flex items-center justify-center gap-5 w-full">
-        {projects.map((project, i) => (
-          <a
-            key={project.id}
-            href={project.href}
-            className="project-tilted flex-1 max-w-[200px] flex flex-col items-center justify-center p-5 rounded-xl transition-all duration-300 group"
-            style={{
-              background: "var(--accent-bg)",
-              border: "1px solid var(--border)",
-              transform: `rotate(${rotations[i]}deg)`,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "rotate(0deg) translateY(-6px) scale(1.03)";
-              e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)";
-              e.currentTarget.style.boxShadow = "0 8px 30px rgba(99,102,241,0.1)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = `rotate(${rotations[i]}deg)`;
-              e.currentTarget.style.borderColor = "var(--border)";
-              e.currentTarget.style.boxShadow = "none";
-            }}
-          >
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold mb-3 transition-colors duration-300"
+      {projects.length > 0 ? (
+        <div className="flex items-center justify-center gap-5 w-full">
+          {projects.map((project, i) => (
+            <a
+              key={project.id}
+              href={project.href}
+              className="project-tilted flex-1 max-w-[200px] flex flex-col items-center justify-center p-5 rounded-xl transition-all duration-300 group"
               style={{
-                background: "var(--accent)",
-                color: "white",
+                background: "var(--accent-bg)",
+                border: "1px solid var(--border)",
+                transform: `rotate(${rotations[i]}deg)`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "rotate(0deg) translateY(-6px) scale(1.03)";
+                e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)";
+                e.currentTarget.style.boxShadow = "0 8px 30px rgba(99,102,241,0.1)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = `rotate(${rotations[i]}deg)`;
+                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.boxShadow = "none";
               }}
             >
-              {project.icon}
-            </div>
-            <span
-              className="text-sm font-semibold text-center"
-              style={{ color: "var(--text-1)" }}
-            >
-              {project.title}
-            </span>
-            {project.description && (
-              <span
-                className="text-xs text-center mt-1 line-clamp-2"
-                style={{ color: "var(--text-3)" }}
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold mb-3 transition-colors duration-300"
+                style={{
+                  background: "var(--accent)",
+                  color: "white",
+                }}
               >
-                {project.description}
+                {project.icon}
+              </div>
+              <span
+                className="text-sm font-semibold text-center"
+                style={{ color: "var(--text-1)" }}
+              >
+                {project.title}
               </span>
-            )}
-            <span className="text-xs mt-2" style={{ color: "var(--text-3)" }}>
-              {project.viewCount} 次浏览
-            </span>
-          </a>
-        ))}
-      </div>
+              {project.description && (
+                <span
+                  className="text-xs text-center mt-1 line-clamp-2"
+                  style={{ color: "var(--text-3)" }}
+                >
+                  {project.description}
+                </span>
+              )}
+              <span className="text-xs mt-2" style={{ color: "var(--text-3)" }}>
+                {project.viewCount} 次浏览
+              </span>
+            </a>
+          ))}
+        </div>
+      ) : loaded ? (
+        // 加载完成但没有项目时显示提示
+        <span className="text-sm" style={{ color: "var(--text-3)" }}>
+          暂无项目
+        </span>
+      ) : (
+        // 加载中显示占位
+        <span className="text-sm" style={{ color: "var(--text-3)" }}>
+          加载中...
+        </span>
+      )}
     </div>
   );
 }

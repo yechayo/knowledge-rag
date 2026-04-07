@@ -189,6 +189,310 @@ buildContentBodySection(grouped.content_body) + '\n\n' +
 }
 
 /**
+ * 检查用户问题是否是"元问题"（关于分类、结构等）
+ * 如果是，直接返回内容列表；否则返回 null
+ */
+async function checkMetaQuestion(
+  query: string,
+  baseUrl: string
+): Promise<GroupedResult | null> {
+  const metaPatterns = [
+    /分类|category|有哪些类型/,
+    /文章列表|内容列表|所有内容/,
+    /结构|structure|导航/,
+    /有多少|数量|count/,
+  ];
+
+  const isMetaQuestion = metaPatterns.some((pattern) => pattern.test(query));
+  if (!isMetaQuestion) {
+    return null;
+  }
+
+  // 元问题：直接查询所有内容，获取分类统计
+  try {
+    const contentRes = await fetch(`${baseUrl.replace('/retrieve', '/content')}?status=published&limit=100`);
+    if (!contentRes.ok) return null;
+
+    const contentData = await contentRes.json();
+    const contents = contentData.items || [];
+
+    if (contents.length === 0) return null;
+
+    // 按分类统计
+    const categoryMap = new Map<string, typeof contents>();
+    for (const c of contents) {
+      const cat = c.category;
+      if (!categoryMap.has(cat)) {
+        categoryMap.set(cat, []);
+      }
+      categoryMap.get(cat)!.push(c);
+    }
+
+    // 构建 content_meta 格式的内容概览
+    const contentMetaChunks: GroupedChunk[] = [];
+
+    // 添加分类统计概览
+    const categorySummary = Array.from(categoryMap.entries()).map(([cat, items]) => {
+      const titles = items.slice(0, 3).map((c: { title: string }) => c.title).join('、');
+      const more = items.length > 3 ? `等${items.length}篇` : `${items.length}篇`;
+      return `${cat}（${more}）：${titles}${items.length > 3 ? '...' : ''}`;
+    }).join('\n');
+
+    contentMetaChunks.push({
+      chunkId: 'category-summary',
+      contentId: 'all',
+      title: '全部分类概览',
+      slug: '',
+      category: 'summary',
+      content: `## 网站内容分类统计\n\n共 ${contents.length} 篇文章，分为以下分类：\n\n${categorySummary}`,
+      score: 1.0,
+      chunkType: 'content_meta',
+      sourceTags: [],
+    });
+
+    // 添加每个分类的代表性内容
+    for (const [cat, items] of categoryMap.entries()) {
+      const sampleItems = items.slice(0, 5);
+      for (const item of sampleItems) {
+        contentMetaChunks.push({
+          chunkId: `meta-${item.id}`,
+          contentId: item.id,
+          title: item.title,
+          slug: item.slug,
+          category: item.category,
+          content: `标题：${item.title}，分类：${item.category}${item.metadata?.tags?.length ? `，标签：${item.metadata.tags.join(', ')}` : ''}`,
+          score: 1.0,
+          chunkType: 'content_meta',
+          sourceTitle: item.title,
+          sourceTags: item.metadata?.tags || [],
+        });
+      }
+    }
+
+    return {
+      nav_structure: [],
+      content_meta: contentMetaChunks,
+      toc_entry: [],
+      content_body: [],
+    };
+  } catch (error) {
+    console.error('Failed to fetch content list for meta question:', error);
+    return null;
+  }
+}
+
+/**
+ * 第一阶段：让 AI 分析用户问题，生成搜索关键词/策略
+ */
+async function analyzeQueryForSearch(
+  query: string,
+  apiKey: string
+): Promise<string[]> {
+  const analysisPrompt = `你是一个智能搜索助手。你的任务是根据用户的问题，分析并生成最合适的搜索关键词。
+
+用户问题："${query}"
+
+请分析这个问题，判断用户真正想要查找什么内容。注意：
+1. 用户的表述可能与知识库中的术语不完全一致，你需要推断用户的真实意图
+2. 考虑同义词、近义词、相关概念
+3. 如果用户询问某个分类/类别的内容，生成该分类的名称和相关关键词
+4. 如果用户询问某个主题，生成该主题的多个表述方式
+
+请以 JSON 数组格式返回 2-5 个搜索关键词，例如：["关键词1", "关键词2", "关键词3"]
+
+只返回 JSON 数组，不要包含任何其他内容。`;
+
+  const response = await fetch(
+    'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + apiKey,
+      },
+      body: JSON.stringify({
+        model: 'GLM-4.5-AirX',
+        messages: [
+          {
+            role: 'user',
+            content: analysisPrompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+        stream: false,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    console.error('Analysis API failed:', await response.text());
+    // 分析失败时，返回原始查询作为回退
+    return [query];
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || '';
+
+  // 尝试解析 JSON 数组
+  try {
+    // 清理可能的 markdown 代码块标记
+    const cleaned = content.replace(/```json\n?|```\n?/g, '').trim();
+    const keywords = JSON.parse(cleaned);
+    if (Array.isArray(keywords) && keywords.length > 0) {
+      return keywords.slice(0, 5);
+    }
+  } catch {
+    // 解析失败，尝试从文本中提取可能的关键词
+    const lines = content.split('\n').filter((l: string) => l.trim());
+    const keywords = lines
+      .map((l: string) => l.replace(/^[-*]\s*/, '').replace(/^"\s*|\s*"$/g, '').trim())
+      .filter((k: string) => k.length > 0 && k.length < 50)
+      .slice(0, 5);
+    if (keywords.length > 0) {
+      return keywords;
+    }
+  }
+
+  // 回退：返回原始查询
+  return [query];
+}
+
+/**
+ * 根据 AI 分析的关键词，判断是否需要查询内容列表
+ * 如果关键词中包含分类名（如 news、article、project），则返回该分类的内容列表
+ */
+async function fetchContentListByKeywords(
+  baseUrl: string,
+  keywords: string[]
+): Promise<GroupedChunk[]> {
+  // 已知的分类列表
+  const knownCategories = ['news', 'article', 'project', 'note', 'page', 'link', 'slogan'];
+
+  // 检查关键词中是否包含分类名
+  const matchedCategories = keywords.filter(k =>
+    knownCategories.includes(k.toLowerCase())
+  );
+
+  // 如果没有匹配到分类，检查关键词是否包含中文分类名
+  const chineseCategoryMap: Record<string, string> = {
+    '新闻': 'news',
+    '文章': 'article',
+    '项目': 'project',
+    '笔记': 'note',
+    '页面': 'page',
+    '链接': 'link',
+    '标语': 'slogan',
+  };
+  for (const [cn, en] of Object.entries(chineseCategoryMap)) {
+    if (keywords.some(k => k.includes(cn) || k.includes(en))) {
+      matchedCategories.push(en);
+    }
+  }
+
+  // 如果有关键词是 category 或 分类，返回所有分类的内容列表
+  if (keywords.some(k => k.includes('分类') || k.includes('category') || k.includes('列表'))) {
+    matchedCategories.push(...knownCategories);
+  }
+
+  if (matchedCategories.length === 0) {
+    return [];
+  }
+
+  // 去重分类
+  const uniqueCategories = [...new Set(matchedCategories)];
+
+  try {
+    // 获取所有已发布内容
+    const contentRes = await fetch(`${baseUrl.replace('/retrieve', '/content')}?status=published`);
+    if (!contentRes.ok) return [];
+
+    const contentData = await contentRes.json();
+    const contents = contentData.items || [];
+
+    // 过滤出匹配的分类
+    const filteredContents = contents.filter((c: { category: string }) =>
+      uniqueCategories.includes(c.category.toLowerCase())
+    );
+
+    // 转换为 content_meta 格式的 chunks
+    return filteredContents.map((c: { id: string; title: string; slug: string; category: string; metadata: { tags?: string[] } }) => ({
+      chunkId: `meta-${c.id}`,
+      contentId: c.id,
+      title: c.title,
+      slug: c.slug,
+      category: c.category,
+      content: `标题：${c.title}，分类：${c.category}${c.metadata?.tags?.length ? `，标签：${c.metadata.tags.join(', ')}` : ''}`,
+      score: 1.0,
+      chunkType: 'content_meta',
+      sourceTitle: c.title,
+      sourceTags: c.metadata?.tags || [],
+    }));
+  } catch (error) {
+    console.error('Failed to fetch content list:', error);
+    return [];
+  }
+}
+
+/**
+ * 使用多个关键词进行综合检索
+ */
+async function multiQueryRetrieve(
+  baseUrl: string,
+  keywords: string[]
+): Promise<GroupedResult> {
+  const groupedResult: GroupedResult = {
+    nav_structure: [],
+    content_meta: [],
+    toc_entry: [],
+    content_body: [],
+  };
+
+  // 使用 Set 来去重（基于 chunkId）
+  const seenChunkIds = new Set<string>();
+
+  // 并行发送多个检索请求
+  const promises = keywords.map(async (keyword) => {
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: keyword, grouped: true, topK: 10 }),
+    });
+    const data = await res.json();
+    return data.grouped || {
+      nav_structure: [],
+      content_meta: [],
+      toc_entry: [],
+      content_body: [],
+    };
+  });
+
+  const results = await Promise.all(promises);
+
+  // 合并去重后的结果
+  for (const group of results) {
+    for (const type of ['nav_structure', 'content_meta', 'toc_entry', 'content_body'] as const) {
+      const chunks = group[type];
+      const limits: Record<string, number> = {
+        nav_structure: 2,
+        content_meta: 5,
+        toc_entry: 5,
+        content_body: 8,
+      };
+
+      for (const chunk of chunks) {
+        if (!seenChunkIds.has(chunk.chunkId) && groupedResult[type].length < limits[type]) {
+          seenChunkIds.add(chunk.chunkId);
+          groupedResult[type].push(chunk);
+        }
+      }
+    }
+  }
+
+  return groupedResult;
+}
+
+/**
  * POST /api/chat - 全局 RAG 聊天接口（公开，SSE 流式输出）
  *
  * 入参:
@@ -218,19 +522,47 @@ export async function POST(req: Request) {
 
     const query = lastUserMessage.content;
 
-    // 调用全局检索接口（grouped 模式）
-    const retrieveRes = await fetch(new URL('/api/retrieve', req.url), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, grouped: true }),
-    });
-    const retrieveData = await retrieveRes.json();
-    const grouped: GroupedResult = retrieveData.grouped || {
-      nav_structure: [],
-      content_meta: [],
-      toc_entry: [],
-      content_body: [],
-    };
+    const apiKey = process.env.BIGMODEL_API_KEY;
+    if (!apiKey) {
+      return new Response(
+        'data: ' + JSON.stringify({ type: 'error', data: '服务配置异常：缺少 API Key' }) + '\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } }
+      );
+    }
+
+    // 检查是否是元问题（关于分类、结构等）
+    const metaGrouped = await checkMetaQuestion(
+      query,
+      new URL('/api/retrieve', req.url).toString()
+    );
+
+    // 如果是元问题，直接使用预检结果；否则进行两阶段检索
+    let grouped: GroupedResult;
+    if (metaGrouped) {
+      grouped = metaGrouped;
+    } else {
+      // 第一阶段：让 AI 分析问题，生成搜索关键词
+      const searchKeywords = await analyzeQueryForSearch(query, apiKey);
+
+      // 第二阶段：使用多个关键词综合检索
+      grouped = await multiQueryRetrieve(
+        new URL('/api/retrieve', req.url).toString(),
+        searchKeywords
+      );
+
+      // 第三阶段：如果关键词中包含分类名，额外查询内容列表
+      const baseUrl = new URL('/api/retrieve', req.url).toString();
+      const contentList = await fetchContentListByKeywords(baseUrl, searchKeywords);
+      if (contentList.length > 0) {
+        // 合并到 content_meta 中（去重）
+        const existingIds = new Set(grouped.content_meta.map(c => c.contentId));
+        for (const item of contentList) {
+          if (!existingIds.has(item.contentId)) {
+            grouped.content_meta.push(item);
+          }
+        }
+      }
+    }
 
     // 判断是否有相关内容
     const hasContent =
@@ -261,17 +593,6 @@ export async function POST(req: Request) {
         const encoder = new TextEncoder();
 
         try {
-          const apiKey = process.env.BIGMODEL_API_KEY;
-          if (!apiKey) {
-            controller.enqueue(
-              encoder.encode(
-                'data: ' + JSON.stringify({ type: 'error', data: '服务配置异常：缺少 API Key' }) + '\n\n'
-              )
-            );
-            controller.close();
-            return;
-          }
-
           // 调用智谱 GLM API（流式 + 思考模式）
           const response = await fetch(
             'https://open.bigmodel.cn/api/paas/v4/chat/completions',

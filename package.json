@@ -4,9 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "prisma generate",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/engines",
+      "prisma",
+      "@prisma/client",
+      "sharp",
+      "unrs-resolver"
+    ]
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

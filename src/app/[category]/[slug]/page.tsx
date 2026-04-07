@@ -376,6 +376,9 @@ export default function DetailPage() {
   const tags = content.metadata?.tags || [];
   const readingTime = estimateReadingTime(content.body);
   const categoryLabel = categoryLabels[content.category] || content.category;
+  const coverImage = typeof content.metadata?.coverImage === "string" && content.metadata.coverImage.trim()
+    ? content.metadata.coverImage
+    : `https://picsum.photos/seed/${content.id}/1200/400`;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
@@ -393,7 +396,7 @@ export default function DetailPage() {
               {/* Cover Image */}
               <div className="relative h-[200px] sm:h-[260px] group">
                 <Image
-                  src={content.metadata?.coverImage || `https://picsum.photos/seed/${content.id}/1200/400`}
+                  src={coverImage}
                   alt={content.title}
                   fill
                   className="object-cover"

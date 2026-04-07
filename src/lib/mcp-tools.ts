@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateEmbedding, generateEmbeddings, vectorToPostgresFormat } from '@/lib/embedding';
+import { generateContentChunks, generateContentHash } from '@/lib/chunkGenerator';
 import { randomUUID } from 'crypto';
 
 // 内容分类枚举
@@ -35,37 +36,69 @@ async function ensureUniqueSlug(slug: string): Promise<string> {
 }
 
 /**
- * Markdown 感知的文本分块器（复用 publish route 逻辑）
+ * 发布内容并生成向量索引（MCP 内部复用）
  */
-function chunkMarkdown(text: string, chunkSize = 500, overlap = 100): string[] {
-  const chunks: string[] = [];
-  const sections = text.split(/(?=#{1,3}\s)/);
+async function publishContentToVector(contentId: string): Promise<{ totalChunks: number }> {
+  const content = await prisma.content.findUnique({ where: { id: contentId } });
+  if (!content || !content.body || content.body.trim().length === 0) {
+    throw new Error('Content not found or body is empty');
+  }
 
-  let buffer = '';
-  for (const section of sections) {
-    if (!section.trim()) continue;
-    if (buffer.length + section.length > chunkSize && buffer) {
-      chunks.push(buffer.trim());
-      buffer = buffer.slice(-overlap) + section;
-    } else {
-      buffer += section;
+  const chunks = generateContentChunks(content.body, {
+    id: content.id,
+    title: content.title,
+    slug: content.slug,
+    category: content.category,
+    metadata: (content.metadata as Record<string, unknown>) || {},
+  });
+
+  if (chunks.length === 0) {
+    throw new Error('No valid chunks generated from body');
+  }
+
+  const chunkTexts = chunks.map(c => c.content);
+  const embeddings = await generateEmbeddings(chunkTexts);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chunk.deleteMany({ where: { contentId } });
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkId = randomUUID();
+      const chunk = chunks[i];
+      await tx.$queryRaw`
+        INSERT INTO "Chunk" (
+          id, content, "contentHash", embedding, "contentId", "createdAt",
+          "chunkType", "headingLevel", "headingAnchor", "headingText",
+          "sourceTitle", "sourceSlug", "sourceCategory", "sourceTags", "sectionPath"
+        ) VALUES (
+          ${chunkId},
+          ${chunk.content},
+          ${generateContentHash(chunk.content)},
+          ${vectorToPostgresFormat(embeddings[i])}::vector(256),
+          ${contentId},
+          DEFAULT,
+          ${chunk.chunkType},
+          ${chunk.headingLevel ?? null},
+          ${chunk.headingAnchor ?? null},
+          ${chunk.headingText ?? null},
+          ${chunk.sourceTitle ?? null},
+          ${chunk.sourceSlug ?? null},
+          ${chunk.sourceCategory ?? null},
+          ${JSON.stringify(chunk.sourceTags ?? [])}::jsonb,
+          ${chunk.sectionPath ?? null}
+        )
+      `;
     }
-  }
-  if (buffer.trim()) chunks.push(buffer.trim());
-  return chunks;
-}
+  }, {
+    maxWait: 10000,
+    timeout: 120000,
+  });
 
-/**
- * 生成内容哈希（复用 publish route 逻辑）
- */
-function generateContentHash(content: string): string {
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16);
+  await prisma.content.update({
+    where: { id: contentId },
+    data: { status: 'published' },
+  });
+
+  return { totalChunks: chunks.length };
 }
 
 /**
@@ -152,14 +185,14 @@ export function registerTools(server: McpServer): void {
   // ──────────────────────────────────────────────
   server.tool(
     'create_content',
-    '创建新内容。创建后状态为 draft，需要调用 publish_content 发布后才会生成向量索引。',
+    '创建新内容。创建后状态为 draft，需要调用 publish_content 发布后才会生成向量索引。若直接设置 status 为 published，将自动完成分块和向量索引生成。',
     {
       title: z.string().describe('内容标题'),
       body: z.string().describe('Markdown 格式的正文内容'),
       category: z.enum(CONTENT_CATEGORIES).describe('内容分类'),
       slug: z.string().optional().describe('URL 友好的别名，不提供则从标题自动生成'),
       metadata: z.record(z.string(), z.any()).optional().describe('分类特定的元数据，如 tags、cover、url 等'),
-      status: z.enum(CONTENT_STATUSES).optional().describe('初始状态，默认 draft'),
+      status: z.enum(CONTENT_STATUSES).optional().describe('初始状态，默认 draft。设为 published 时自动生成向量索引'),
     },
     async ({ title, body, category, slug: inputSlug, metadata, status }) => {
       let slug = inputSlug || titleToSlug(title);
@@ -176,6 +209,37 @@ export function registerTools(server: McpServer): void {
         },
       });
 
+      // 如果直接设置 published，自动生成向量索引
+      if (status === 'published') {
+        try {
+          const stats = await publishContentToVector(content.id);
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                message: 'Content created, published and indexed',
+                content,
+                stats,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          // 索引失败时回退为 draft
+          await prisma.content.update({ where: { id: content.id }, data: { status: 'draft' } });
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                message: 'Content created but indexing failed, reverted to draft',
+                content,
+                error: error instanceof Error ? error.message : String(error),
+              }, null, 2),
+            }],
+            isError: true,
+          };
+        }
+      }
+
       return {
         content: [{
           type: 'text' as const,
@@ -190,14 +254,14 @@ export function registerTools(server: McpServer): void {
   // ──────────────────────────────────────────────
   server.tool(
     'update_content',
-    '更新已有内容。仅更新传入的字段，未传入的字段保持不变。更新后如需重新生成向量索引，请调用 publish_content。',
+    '更新已有内容。仅更新传入的字段，未传入的字段保持不变。更新后如需重新生成向量索引，请调用 publish_content。若将 status 设为 published，将自动完成分块和向量索引生成。',
     {
       id: z.string().describe('内容的 ID'),
       title: z.string().optional().describe('新标题'),
       body: z.string().optional().describe('新正文（Markdown）'),
       category: z.enum(CONTENT_CATEGORIES).optional().describe('新分类'),
       metadata: z.record(z.string(), z.any()).optional().describe('新元数据'),
-      status: z.enum(CONTENT_STATUSES).optional().describe('新状态'),
+      status: z.enum(CONTENT_STATUSES).optional().describe('新状态。设为 published 时自动生成向量索引'),
     },
     async ({ id, title, body, category, metadata, status }) => {
       const existing = await prisma.content.findUnique({ where: { id } });
@@ -223,6 +287,36 @@ export function registerTools(server: McpServer): void {
       }
 
       const updated = await prisma.content.update({ where: { id }, data: updateData });
+
+      // 如果状态设为 published，自动生成向量索引
+      if (status === 'published') {
+        try {
+          const stats = await publishContentToVector(id);
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                message: 'Content updated, published and indexed',
+                content: updated,
+                stats,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          await prisma.content.update({ where: { id }, data: { status: existing.status } });
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                message: 'Content updated but indexing failed, status reverted',
+                content: updated,
+                error: error instanceof Error ? error.message : String(error),
+              }, null, 2),
+            }],
+            isError: true,
+          };
+        }
+      }
 
       return {
         content: [{
@@ -299,57 +393,31 @@ export function registerTools(server: McpServer): void {
         };
       }
 
-      // 1. 分块
-      const chunkTexts = chunkMarkdown(content.body);
-      if (chunkTexts.length === 0) {
+      try {
+        const stats = await publishContentToVector(id);
+        const published = await prisma.content.findUnique({ where: { id } });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No valid chunks generated' }) }],
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              message: 'Content published and indexed',
+              content: published,
+              stats,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: 'Failed to publish',
+              details: error instanceof Error ? error.message : String(error),
+            }, null, 2),
+          }],
           isError: true,
         };
       }
-
-      // 2. 生成 embedding
-      const embeddings = await generateEmbeddings(chunkTexts);
-
-      // 3. 事务：删除旧 chunks + 插入新 chunks
-      await prisma.$transaction(async (tx) => {
-        await tx.chunk.deleteMany({ where: { contentId: id } });
-        for (let i = 0; i < chunkTexts.length; i++) {
-          const chunkId = randomUUID();
-          await tx.$queryRaw`
-            INSERT INTO "Chunk" (
-              id, content, "contentHash", embedding, "contentId", "createdAt"
-            ) VALUES (
-              ${chunkId},
-              ${chunkTexts[i]},
-              ${generateContentHash(chunkTexts[i])},
-              ${vectorToPostgresFormat(embeddings[i])}::vector(256),
-              ${id},
-              DEFAULT
-            )
-          `;
-        }
-      }, {
-        maxWait: 10000,
-        timeout: 120000,
-      });
-
-      // 4. 更新状态
-      const published = await prisma.content.update({
-        where: { id },
-        data: { status: 'published' },
-      });
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            message: 'Content published and indexed',
-            content: published,
-            stats: { totalChunks: chunkTexts.length },
-          }, null, 2),
-        }],
-      };
     },
   );
 

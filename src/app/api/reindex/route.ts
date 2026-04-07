@@ -187,7 +187,7 @@ export async function POST(req: Request) {
         totalChunks += navStructureChunks;
       }
 
-      return { totalChunks, navStructureChunks, totalImageDescriptions };
+      return { totalChunks, navStructureChunks, totalImageDescriptions, reindexErrors };
     }, {
       maxWait: 10000,
       timeout: 600000, // 10 分钟超时，因为可能处理大量内容
@@ -201,9 +201,9 @@ export async function POST(req: Request) {
         navStructureChunks: result.navStructureChunks,
         totalImageDescriptions: result.totalImageDescriptions,
       },
-      ...(reindexErrors.length > 0 ? {
+      ...(result.reindexErrors.length > 0 ? {
         warnings: {
-          visionFailedImages: reindexErrors,
+          visionFailedImages: result.reindexErrors,
         },
       } : {}),
     });

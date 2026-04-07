@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useCategories, type CategoryItem } from "@/hooks/useCategories";
 
 export default function CategoryManager() {
-  const { categories, categoryLabels } = useCategories();
+  const { categories, categoryLabels, refresh } = useCategories();
   const [newKey, setNewKey] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -19,11 +19,14 @@ export default function CategoryManager() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: "siteCategories", value: JSON.stringify(updated) }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
       setMsg("已保存");
-      window.location.reload();
-    } catch {
-      setMsg("保存失败");
+      refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "保存失败");
     } finally {
       setSaving(false);
     }

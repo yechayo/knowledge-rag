@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export interface CategoryItem {
   key: string;
@@ -17,7 +17,7 @@ const FALLBACK: CategoryItem[] = [
 export function useCategories() {
   const [categories, setCategories] = useState<CategoryItem[]>(FALLBACK);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     fetch("/api/config")
       .then((r) => r.json())
       .then((config) => {
@@ -30,10 +30,14 @@ export function useCategories() {
       .catch(() => { /* use fallback */ });
   }, []);
 
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   const categoryLabels: Record<string, string> = {};
   for (const c of categories) {
     categoryLabels[c.key] = c.label;
   }
 
-  return { categories, categoryLabels };
+  return { categories, categoryLabels, refresh };
 }
