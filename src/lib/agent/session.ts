@@ -34,25 +34,29 @@ export async function getOrCreateSession(
 
 /**
  * 尝试获取 Session 写锁 (只有 idle 状态才能获取)
+ * 使用原子更新避免 TOCTOU 竞态条件
  */
 export async function acquireSessionLock(
   sessionId: string,
   userId: string
 ): Promise<SessionLock | null> {
-  // 先检查 session 是否存在且属于该用户，以及状态是否为 idle
+  // 先检查 session 是否存在且属于该用户
   const existing = await prisma.agentSession.findUnique({
     where: { id: sessionId },
   });
 
-  if (!existing || existing.userId !== userId || existing.status !== "idle") {
+  if (!existing || existing.userId !== userId) {
     return null;
   }
 
-  // 使用 update 更新状态，只有满足 status 为 idle 时才更新
+  // 原子更新：只在 status 为 idle 时才更新为 running
+  // 如果在此期间被其他请求获取锁，update 会失败并返回 null
   const session = await prisma.agentSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, status: "idle" },
     data: { status: "running" },
-  });
+  }).catch(() => null);
+
+  if (!session) return null;
 
   return {
     release: async () => {
