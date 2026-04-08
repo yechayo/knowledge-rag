@@ -1,0 +1,4 @@
+-- Add fields for long conversation support
+ALTER TABLE "AgentSession" ADD COLUMN IF NOT EXISTS "tokenUsage" INTEGER DEFAULT 0 NOT NULL;
+ALTER TABLE "AgentSession" ADD COLUMN IF NOT EXISTS "messageCount" INTEGER DEFAULT 0 NOT NULL;
+ALTER TABLE "AgentSession" ADD COLUMN IF NOT EXISTS "compactCount" INTEGER DEFAULT 0 NOT NULL;

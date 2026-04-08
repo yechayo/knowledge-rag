@@ -138,6 +138,11 @@ model AgentSession {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // 长对话统计
+  tokenUsage   Int      @default(0)    // 累计 token 使用量
+  messageCount Int      @default(0)    // 累计消息数
+  compactCount Int      @default(0)    // 压缩次数
+
   @@index([userId])
   @@index([agentId])
   @@index([status])
@@ -145,18 +150,41 @@ model AgentSession {
 }
 
 model Task {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  description   String?
+  agentType     String    @default("react")
+  triggerType   String    @default("manual") // manual | cron
+  cronExpr      String?                        // cron 表达式
+  scheduleKind  String?                        // cron | every | at
+  everyMs       Int?                          // 间隔毫秒（every 用）
+  atMs          DateTime?                     // 一次性时间（at 用）
+  nextRunAt     DateTime?                     // 下次执行时间
+  lastRunAt     DateTime?                     // 上次执行时间
+  lastError     String?                       // 上次错误信息
+  enabled       Boolean   @default(true)       // 启用/停用
+  tools         Json      @default("[]")
+  prompt        String
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([triggerType, enabled, nextRunAt])
+}
+
+model AgentMemory {
   id          String   @id @default(cuid())
-  name        String   @unique
+  userId      String   @default("admin")
+  type        String   @default("user")  // user | feedback | project | reference
+  name        String
   description String?
-  agentType   String   @default("react")
-  triggerType String   @default("manual")
-  cronExpr    String?
-  tools       Json     @default("[]")
-  prompt      String
-  isActive    Boolean  @default(true)
+  content     String
+  isPrivate   Boolean  @default(true)   // true = 仅当前管理员可见
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([triggerType])
-  @@index([isActive])
+  @@index([type])
+  @@index([userId])
+  @@index([isPrivate])
+  @@index([updatedAt])
 }
