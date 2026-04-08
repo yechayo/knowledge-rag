@@ -2,7 +2,6 @@ import { createGLM5 } from "@/lib/langchain/llm";
 import { duckduckgoSearch, createContent, listContent, deleteContent } from "./tools";
 import { getSystemPrompt, NEWS_AGENT_PROMPT } from "./prompts/react_agent";
 import { AgentExecutor, createReactAgent } from "@langchain/langgraph/prebuilt";
-import { MemorySaver } from "@langchain/langgraph/checkpoint";
 
 const tools = [duckduckgoSearch, createContent, listContent, deleteContent];
 
@@ -29,7 +28,6 @@ export async function createNewsAgentExecutor() {
     llm,
     tools,
     prompt: getSystemPrompt(NEWS_AGENT_PROMPT),
-    checkpointSaver: new MemorySaver(),
   });
 
   return new AgentExecutor({ agent, tools });
