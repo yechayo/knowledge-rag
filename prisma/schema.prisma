@@ -110,3 +110,50 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+model UsageLog {
+  id             String   @id @default(cuid())
+  sessionId      String?  // 对话会话 ID（如果有）
+  query          String   // 用户问题
+  answerLength   Int      @default(0) // 回答长度
+  citations      Int      @default(0) // 引用数量
+  latencyMs      Int      @default(0) // 响应延迟（毫秒）
+  promptTokens   Int      @default(0) // 输入 token 数
+  completionTokens Int    @default(0) // 输出 token 数
+  totalTokens   Int      @default(0) // 总 token 数
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+model AgentSession {
+  id          String   @id @default(cuid())
+  sessionKey  String   @unique
+  agentId     String
+  status      String   @default("idle")
+  messages    Json     @default("[]")
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([agentId])
+  @@index([status])
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  agentType   String   @default("react")
+  triggerType String   @default("manual")
+  cronExpr    String?
+  tools       Json     @default("[]")
+  prompt      String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([triggerType])
+  @@index([isActive])
+}
