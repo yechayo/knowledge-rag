@@ -112,10 +112,10 @@ export default function AgentChat() {
             if (!data.type) continue;
 
             if (data.type === "init") {
-              if (data.sessionKey) setSessionKey(data.sessionKey);
+              if (data.data?.sessionKey) setSessionKey(data.data.sessionKey);
             } else if (data.type === "delta") {
               const current = contentBufferRef.current[assistantId] || "";
-              contentBufferRef.current[assistantId] = current + (data.content || "");
+              contentBufferRef.current[assistantId] = current + (data.data?.content || "");
 
               if (debounceRef.current) clearTimeout(debounceRef.current);
               debounceRef.current = setTimeout(() => {
@@ -130,9 +130,9 @@ export default function AgentChat() {
             } else if (data.type === "tool_start") {
               const toolBlock: ToolCallBlock = {
                 id: `tool-${++toolIdCounterRef.current}`,
-                name: data.name,
+                name: data.data?.toolName || "unknown",
                 status: "running",
-                input: data.input || {},
+                input: JSON.parse(data.data?.arguments || "{}"),
               };
               setMessages((prev) =>
                 prev.map((m) =>
@@ -150,11 +150,11 @@ export default function AgentChat() {
                   const newToolCalls = [...m.toolCalls];
                   newToolCalls[toolIndex] = {
                     ...newToolCalls[toolIndex],
-                    status: data.success !== false ? "done" : "error",
+                    status: data.data?.success !== false ? "done" : "error",
                     result:
-                      typeof data.result === "string"
-                        ? data.result
-                        : JSON.stringify(data.result),
+                      typeof data.data?.result === "string"
+                        ? data.data.result
+                        : JSON.stringify(data.data?.result),
                   };
                   return { ...m, toolCalls: newToolCalls };
                 })
