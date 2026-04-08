@@ -164,9 +164,12 @@ export default function AgentChat() {
                 prev.map((m) => (m.id === assistantId ? { ...m, isComplete: true } : m))
               );
             } else if (data.type === "error") {
+              const errorMsg = typeof data.data === "string"
+                ? data.data
+                : data.data?.message || "Unknown error";
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantId ? { ...m, isComplete: true, error: data.message } : m
+                  m.id === assistantId ? { ...m, isComplete: true, error: errorMsg } : m
                 )
               );
             }

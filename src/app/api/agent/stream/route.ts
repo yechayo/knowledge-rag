@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     await requireAdmin();
   } catch {
     return new Response(
-      "data: " + JSON.stringify({ type: "error", data: "Unauthorized" }) + "\n\n",
+      "data: " + JSON.stringify({ type: "error", data: { message: "Unauthorized" } }) + "\n\n",
       { status: 401, headers: { "Content-Type": "text/event-stream" } }
     );
   }
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     return new Response(
-      "data: " + JSON.stringify({ type: "error", data: "Invalid request body" }) + "\n\n",
+      "data: " + JSON.stringify({ type: "error", data: { message: "Invalid request body" } }) + "\n\n",
       { status: 400, headers: { "Content-Type": "text/event-stream" } }
     );
   }
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
   if (!message || typeof message !== "string") {
     return new Response(
-      "data: " + JSON.stringify({ type: "error", data: "Missing or invalid 'message' field" }) + "\n\n",
+      "data: " + JSON.stringify({ type: "error", data: { message: "Missing or invalid 'message' field" } }) + "\n\n",
       { status: 400, headers: { "Content-Type": "text/event-stream" } }
     );
   }
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[stream] Failed to get/create session:", err);
     return new Response(
-      "data: " + JSON.stringify({ type: "error", data: "Failed to create session" }) + "\n\n",
+      "data: " + JSON.stringify({ type: "error", data: { message: "Failed to create session" } }) + "\n\n",
       { status: 500, headers: { "Content-Type": "text/event-stream" } }
     );
   }
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
 
   if (!lock) {
     return new Response(
-      "data: " + JSON.stringify({ type: "error", data: "Agent is busy, please try again later" }) + "\n\n",
+      "data: " + JSON.stringify({ type: "error", data: { message: "Agent is busy, please try again later" } }) + "\n\n",
       { status: 409, headers: { "Content-Type": "text/event-stream" } }
     );
   }
