@@ -85,6 +85,9 @@ export async function POST(req: Request) {
   }
 
   // 6. 构建 SSE 流
+  // 方案 A: executor.stream() — 当前报 "messages 参数非法" GLM API 错误
+  // 方案 B: executor.invoke() — 工作正常，但非真正的 token 级别流式
+  // 采用方案 B 保证功能正常，后续可优化为真正的流式
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -109,70 +112,60 @@ export async function POST(req: Request) {
         // 用于累积助手最终回复内容
         let finalContent = "";
 
-        // 执行流式推理
+        // 执行推理（使用 invoke，因为 stream() 的 chunk 格式不稳定）
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const input: any = { messages: [{ role: "user", content: message }] };
 
-        // executor.stream() 返回 Promise<IterableReadableStream<T>>，需要先 await
+        // invoke() 返回完整结果，我们可以遍历 messages 提取内容
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const iterableStream = await (executor.stream(input) as Promise<any>);
+        const result: any = await (executor.invoke(input) as Promise<any>);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        for await (const chunk of iterableStream as AsyncGenerator<any, void, unknown>) {
-          // chunk 通常是 { messages: [...] } 结构
-          // 遍历消息列表
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const messages: any[] = chunk.messages || [];
+        // 遍历结果中的消息，提取文字内容和工具调用
+        const resultMessages = result.messages || [];
+        for (const msg of resultMessages) {
+          const msgType = msg.constructor?.name || "";
+          const msgContent = msg.content || "";
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          for (const msg of messages) {
-            const msgType = (msg as any).lc_name || (msg as any).type || "";
-            const msgContent = msg.content || "";
+          if (msgType === "ToolMessage" || (msg as any).type === "tool") {
+            const toolCallId = (msg as any).tool_call_id || "";
+            const toolName = (msg as any).name || "tool";
+            const toolContent = typeof msgContent === "string" ? msgContent : JSON.stringify(msgContent);
 
-            // 判断消息类型
-            if (msgType === "ToolMessage" || msgType === "tool") {
-              // 工具执行结果
-              const toolCallId = (msg as any).tool_call_id || "";
-              const toolContent = typeof msgContent === "string" ? msgContent : JSON.stringify(msgContent);
+            sendEvent("tool_end", {
+              toolCallId,
+              toolName,
+              result: toolContent,
+            });
+          } else if (msgType === "AIMessage" || (msg as any).type === "ai") {
+            // 文字内容 -> delta
+            if (msgContent && typeof msgContent === "string" && msgContent.trim()) {
+              // 分段发送 delta（每 20 个字符为一段，模拟流式效果）
+              for (let i = 0; i < msgContent.length; i += 20) {
+                const chunk = msgContent.slice(i, i + 20);
+                finalContent += chunk;
+                sendEvent("delta", { content: chunk });
 
-              if (toolCallId && pendingTools.has(toolCallId)) {
-                const pending = pendingTools.get(toolCallId)!;
+                // 小延迟模拟打字效果（每 20 字符 30ms）
+                await new Promise(resolve => setTimeout(resolve, 30));
+              }
+            }
 
-                // 发送 tool_end 事件
-                sendEvent("tool_end", {
+            // 工具调用请求 -> tool_start
+            const toolCalls: any[] = (msg as any).tool_calls || [];
+            for (const tc of toolCalls) {
+              const toolCallId = tc.id || tc.tool_call_id || "";
+              const toolName = tc.name || tc.function?.name || "";
+              const toolArgs = typeof tc.arguments === "string"
+                ? tc.arguments
+                : JSON.stringify(tc.arguments || {});
+
+              if (toolCallId && toolName) {
+                pendingTools.set(toolCallId, { name: toolName, args: toolArgs });
+                sendEvent("tool_start", {
                   toolCallId,
-                  toolName: pending.name,
-                  result: toolContent,
+                  toolName,
+                  arguments: toolArgs,
                 });
-
-                pendingTools.delete(toolCallId);
-              }
-            } else if (msgType === "AIMessage" || msgType === "ai") {
-              // AI 消息：包含文字内容和/或工具调用
-              // 文字内容 -> 发送 delta
-              if (msgContent && typeof msgContent === "string" && msgContent.trim()) {
-                finalContent += msgContent;
-                sendEvent("delta", { content: msgContent });
-              }
-
-              // 工具调用请求 -> 发送 tool_start
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const toolCalls: any[] = (msg as any).tool_calls || [];
-              for (const tc of toolCalls) {
-                const toolCallId = tc.id || tc.tool_call_id || "";
-                const toolName = tc.name || tc.function?.name || "";
-                const toolArgs = typeof tc.arguments === "string"
-                  ? tc.arguments
-                  : JSON.stringify(tc.arguments || {});
-
-                if (toolCallId && toolName) {
-                  pendingTools.set(toolCallId, { name: toolName, args: toolArgs });
-                  sendEvent("tool_start", {
-                    toolCallId,
-                    toolName,
-                    arguments: toolArgs,
-                  });
-                }
               }
             }
           }
