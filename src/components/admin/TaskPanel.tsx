@@ -13,24 +13,25 @@ interface Task {
   createdAt: string;
 }
 
-interface TaskPanelProps {
-  onTaskSelect?: (taskId: string) => void;
-}
-
-export default function TaskPanel({ onTaskSelect }: TaskPanelProps) {
+export default function TaskPanel() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [runningTasks, setRunningTasks] = useState<Set<string>>(new Set());
+  const [togglingTasks, setTogglingTasks] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   // 获取任务列表
   const fetchTasks = async () => {
     try {
       const res = await fetch("/api/agent");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       setTasks(data.tasks || []);
     } catch (err) {
-      setError("Failed to fetch tasks");
+      setError(err instanceof Error ? err.message : "Failed to fetch tasks");
     }
   };
 
@@ -72,15 +73,26 @@ export default function TaskPanel({ onTaskSelect }: TaskPanelProps) {
 
   // 切换任务激活状态
   const toggleTask = async (taskId: string, isActive: boolean) => {
+    setTogglingTasks((prev) => new Set(prev).add(taskId));
     try {
-      await fetch(`/api/agent/${taskId}`, {
+      const res = await fetch(`/api/agent/${taskId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
       fetchTasks();
     } catch (err) {
-      setError("Failed to update task");
+      setError(err instanceof Error ? err.message : "Failed to update task");
+    } finally {
+      setTogglingTasks((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
     }
   };
 
@@ -146,9 +158,10 @@ export default function TaskPanel({ onTaskSelect }: TaskPanelProps) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => toggleTask(task.id, !task.isActive)}
-                    className="text-xs px-3 py-1 rounded border border-[var(--border)] hover:bg-[var(--hover)]"
+                    disabled={togglingTasks.has(task.id)}
+                    className="text-xs px-3 py-1 rounded border border-[var(--border)] hover:bg-[var(--hover)] disabled:opacity-50"
                   >
-                    {task.isActive ? "禁用" : "激活"}
+                    {togglingTasks.has(task.id) ? "处理中..." : task.isActive ? "禁用" : "激活"}
                   </button>
                   <button
                     onClick={() => runTask(task.id)}
