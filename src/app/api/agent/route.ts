@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { runNewsAgent } from "@/lib/agent/executor";
+import { runTask } from "@/lib/agent/executor";
 import { getOrCreateSession, acquireSessionLock, appendSessionMessage } from "@/lib/agent/session";
 import { runTaskSchema, createTaskSchema } from "@/lib/validations";
 
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     try {
       // 根据任务类型执行
       if (task.agentType === "react") {
-        const result = await runNewsAgent();
+        const result = await runTask({ prompt: task.prompt ?? "" });
 
         await appendSessionMessage(agentSession.id, "assistant", JSON.stringify(result), "admin");
 

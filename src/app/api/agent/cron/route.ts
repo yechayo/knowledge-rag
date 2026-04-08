@@ -1,7 +1,7 @@
 // src/app/api/agent/cron/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { runNewsAgent } from "@/lib/agent/executor";
+import { runTask } from "@/lib/agent/executor";
 import { getOrCreateSession, acquireSessionLock } from "@/lib/agent/session";
 
 // Vercel Cron 触发此端点
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
 
       try {
         if (task.agentType === "react") {
-          await runNewsAgent();
+          await runTask({ prompt: task.prompt ?? "" });
           results.push({ taskId: task.id, status: "success" });
         }
       } catch (error) {
