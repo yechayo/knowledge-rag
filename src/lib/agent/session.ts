@@ -34,38 +34,60 @@ export async function getOrCreateSession(
 
 /**
  * 尝试获取 Session 写锁 (只有 idle 状态才能获取)
- * 使用原子更新避免 TOCTOU 竞态条件
+ * 使用原生 SQL 原子更新避免 TOCTOU 竞态条件
  */
 export async function acquireSessionLock(
   sessionId: string,
   userId: string
 ): Promise<SessionLock | null> {
-  // 先检查 session 是否存在且属于该用户
-  const existing = await prisma.agentSession.findUnique({
-    where: { id: sessionId },
-  });
+  // 使用原生 SQL 原子更新：
+  // UPDATE ... WHERE id = $1 AND userId = $2 AND status = 'idle'
+  // 检查和更新在同一条 SQL 语句中完成，避免 TOCTOU 竞态条件
+  const result = await prisma.$executeRaw`
+    UPDATE "AgentSession"
+    SET status = 'running', "updatedAt" = NOW()
+    WHERE id = ${sessionId} AND "userId" = ${userId} AND status = 'idle'
+  `;
 
-  if (!existing || existing.userId !== userId) {
+  // 如果没有更新任何行，说明 session 不存在、不属于该用户、或已被其他请求锁定
+  if (result === 0) {
     return null;
   }
 
-  // 原子更新：只在 status 为 idle 时才更新为 running
-  // 如果在此期间被其他请求获取锁，update 会失败并返回 null
-  const session = await prisma.agentSession.update({
-    where: { id: sessionId, status: "idle" },
-    data: { status: "running" },
-  }).catch(() => null);
-
-  if (!session) return null;
-
   return {
     release: async () => {
-      await prisma.agentSession.update({
-        where: { id: sessionId },
-        data: { status: "idle" },
-      });
+      await releaseSessionLockWithRetry(sessionId);
     },
   };
+}
+
+/**
+ * 释放 Session 锁 (带重试机制)
+ * 最多重试 3 次，间隔递增 (100ms, 200ms, 400ms)
+ */
+async function releaseSessionLockWithRetry(sessionId: string): Promise<void> {
+  const maxRetries = 3;
+  const baseDelayMs = 100;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await prisma.$executeRaw`
+        UPDATE "AgentSession"
+        SET status = 'idle', "updatedAt" = NOW()
+        WHERE id = ${sessionId} AND status = 'running'
+      `;
+      return; // 成功释放，退出重试循环
+    } catch (error) {
+      if (attempt === maxRetries - 1) {
+        // 最后一次重试也失败了
+        console.error(`[SessionLock] Failed to release lock for session ${sessionId} after ${maxRetries} attempts:`, error);
+        throw error;
+      }
+      // 递增延迟: 100ms, 200ms, 400ms
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
 }
 
 /**
