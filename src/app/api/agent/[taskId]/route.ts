@@ -18,8 +18,15 @@ async function requireAdmin() {
   return session;
 }
 
-// GET /api/agent/[taskId] - 获取任务详情
+// GET /api/agent/[taskId] - 获取任务详情 (需要管理员认证)
 export async function GET(req: Request, { params }: RouteParams) {
+  // 添加管理员认证
+  try {
+    await requireAdmin();
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { taskId } = await params;
 
   const task = await prisma.task.findUnique({ where: { id: taskId } });
