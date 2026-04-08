@@ -30,6 +30,9 @@ export default function AgentChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const contentBufferRef = useRef<{ [assistantId: string]: string }>({});
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toolIdCounterRef = useRef(0);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -111,16 +114,22 @@ export default function AgentChat() {
             if (data.type === "init") {
               if (data.sessionKey) setSessionKey(data.sessionKey);
             } else if (data.type === "delta") {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: m.content + (data.content || "") }
-                    : m
-                )
-              );
+              const current = contentBufferRef.current[assistantId] || "";
+              contentBufferRef.current[assistantId] = current + (data.content || "");
+
+              if (debounceRef.current) clearTimeout(debounceRef.current);
+              debounceRef.current = setTimeout(() => {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: contentBufferRef.current[assistantId] || m.content }
+                      : m
+                  )
+                );
+              }, 50);
             } else if (data.type === "tool_start") {
               const toolBlock: ToolCallBlock = {
-                id: `tool-${Date.now()}`,
+                id: `tool-${++toolIdCounterRef.current}`,
                 name: data.name,
                 status: "running",
                 input: data.input || {},
@@ -134,25 +143,21 @@ export default function AgentChat() {
               );
             } else if (data.type === "tool_end") {
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? {
-                        ...m,
-                        toolCalls: m.toolCalls.map((tc) =>
-                          tc.name === data.name
-                            ? {
-                                ...tc,
-                                status: data.success !== false ? "done" : "error",
-                                result:
-                                  typeof data.result === "string"
-                                    ? data.result
-                                    : JSON.stringify(data.result),
-                              }
-                            : tc
-                        ),
-                      }
-                    : m
-                )
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  const toolIndex = m.toolCalls.findIndex((tc) => tc.status === "running");
+                  if (toolIndex === -1) return m;
+                  const newToolCalls = [...m.toolCalls];
+                  newToolCalls[toolIndex] = {
+                    ...newToolCalls[toolIndex],
+                    status: data.success !== false ? "done" : "error",
+                    result:
+                      typeof data.result === "string"
+                        ? data.result
+                        : JSON.stringify(data.result),
+                  };
+                  return { ...m, toolCalls: newToolCalls };
+                })
               );
             } else if (data.type === "done") {
               setMessages((prev) =>
@@ -185,6 +190,8 @@ export default function AgentChat() {
         );
       }
     } finally {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      contentBufferRef.current[assistantId] = "";
       setIsLoading(false);
       setCurrentAssistantId(null);
       abortControllerRef.current = null;
