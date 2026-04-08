@@ -4,41 +4,55 @@ export interface SessionLock {
   release: () => Promise<void>;
 }
 
-const LOCK_TIMEOUT = 10000; // 10秒
+export interface SessionMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: number;
+}
 
 /**
- * 获取或创建 Session
+ * 获取或创建 Session (原子操作，避免竞态条件)
  */
-export async function getOrCreateSession(sessionKey: string, agentId: string) {
-  const existing = await prisma.agentSession.findUnique({
+export async function getOrCreateSession(
+  sessionKey: string,
+  agentId: string,
+  userId: string
+) {
+  return prisma.agentSession.upsert({
     where: { sessionKey },
-  });
-
-  if (existing) {
-    return existing;
-  }
-
-  return prisma.agentSession.create({
-    data: {
+    create: {
       sessionKey,
       agentId,
+      userId,
       status: "idle",
       messages: [],
       metadata: {},
     },
+    update: {},
   });
 }
 
 /**
- * 尝试获取 Session 写锁
+ * 尝试获取 Session 写锁 (只有 idle 状态才能获取)
  */
-export async function acquireSessionLock(sessionId: string): Promise<SessionLock | null> {
+export async function acquireSessionLock(
+  sessionId: string,
+  userId: string
+): Promise<SessionLock | null> {
+  // 先检查 session 是否存在且属于该用户，以及状态是否为 idle
+  const existing = await prisma.agentSession.findUnique({
+    where: { id: sessionId },
+  });
+
+  if (!existing || existing.userId !== userId || existing.status !== "idle") {
+    return null;
+  }
+
+  // 使用 update 更新状态，只有满足 status 为 idle 时才更新
   const session = await prisma.agentSession.update({
     where: { id: sessionId },
     data: { status: "running" },
   });
-
-  if (!session) return null;
 
   return {
     release: async () => {
@@ -51,26 +65,44 @@ export async function acquireSessionLock(sessionId: string): Promise<SessionLock
 }
 
 /**
- * 更新 Session 消息
+ * 更新 Session 消息 (使用事务保证原子性)
  */
 export async function appendSessionMessage(
   sessionId: string,
   role: "user" | "assistant" | "system",
-  content: string
+  content: string,
+  userId: string
 ) {
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.agentSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session || session.userId !== userId) return;
+
+    const messages = (session.messages as SessionMessage[]) || [];
+    messages.push({ role, content, timestamp: Date.now() });
+
+    await tx.agentSession.update({
+      where: { id: sessionId },
+      data: { messages },
+    });
+  });
+}
+
+/**
+ * 获取 Session (带用户验证)
+ */
+export async function getSession(sessionId: string, userId: string) {
   const session = await prisma.agentSession.findUnique({
     where: { id: sessionId },
   });
 
-  if (!session) return;
+  if (!session || session.userId !== userId) {
+    return null;
+  }
 
-  const messages = (session.messages as any[]) || [];
-  messages.push({ role, content, timestamp: Date.now() });
-
-  await prisma.agentSession.update({
-    where: { id: sessionId },
-    data: { messages },
-  });
+  return session;
 }
 
 /**

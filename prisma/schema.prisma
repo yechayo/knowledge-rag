@@ -130,6 +130,7 @@ model UsageLog {
 model AgentSession {
   id          String   @id @default(cuid())
   sessionKey  String   @unique
+  userId      String
   agentId     String
   status      String   @default("idle")
   messages    Json     @default("[]")
@@ -137,8 +138,10 @@ model AgentSession {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([userId])
   @@index([agentId])
   @@index([status])
+  @@index([userId, sessionKey])
 }
 
 model Task {
