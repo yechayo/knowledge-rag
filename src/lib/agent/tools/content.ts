@@ -17,20 +17,22 @@ export const createContent = tool(
     status?: string;
   }) => {
     // 生成 slug
-    let finalSlug = slug || title.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\u4e00-\u9fff-]/g, "");
+    const baseSlug = slug || title.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\u4e00-\u9fff-]/g, "");
 
-    // 检查唯一性
-    const existing = await prisma.content.findUnique({ where: { slug: finalSlug } });
-    if (existing) {
-      finalSlug = `${finalSlug}-${Date.now()}`;
-    }
-
-    const content = await prisma.content.create({
-      data: {
+    // 使用 upsert 确保原子性，避免竞态条件
+    const content = await prisma.content.upsert({
+      where: { slug: baseSlug },
+      update: {
         title,
         body,
         category,
-        slug: finalSlug,
+        status,
+      },
+      create: {
+        title,
+        body,
+        category,
+        slug: baseSlug,
         status,
       },
     });
@@ -91,10 +93,11 @@ export const listContent = tool(
 
 export const deleteContent = tool(
   async ({ id }: { id: string }) => {
-    // 先删除关联的 chunks
-    await prisma.chunk.deleteMany({ where: { contentId: id } });
-
-    const result = await prisma.content.delete({ where: { id } });
+    // 使用事务确保原子性删除
+    const result = await prisma.$transaction([
+      prisma.chunk.deleteMany({ where: { contentId: id } }),
+      prisma.content.delete({ where: { id } }),
+    ]);
     return result;
   },
   {

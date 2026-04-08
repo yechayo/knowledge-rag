@@ -17,18 +17,23 @@ async function searchWithDDGS(query: string, maxResults: number = 10): Promise<s
       "-c",
       `
 import sys
+import os
 import warnings
 warnings.filterwarnings('ignore')
 try:
     from duckduckgo_search import DDGS
     import json
+    query = os.environ.get('DDGS_QUERY', '')
+    max_results = int(os.environ.get('DDGS_MAX_RESULTS', '10'))
     with DDGS() as ddgs:
-        results = list(ddgs.text('${query.replace(/'/g, "\\'")}', max_results=${maxResults}))
+        results = list(ddgs.text(query, max_results=max_results))
         print(json.dumps(results, ensure_ascii=False))
 except Exception as e:
     print(json.dumps({"error": str(e)}), file=sys.stderr)
 `,
-    ]);
+    ], {
+      env: { ...process.env, DDGS_QUERY: query, DDGS_MAX_RESULTS: String(maxResults) },
+    });
 
     let output = "";
     python.stdout.on("data", (data: Buffer) => (output += data.toString()));
@@ -44,8 +49,13 @@ except Exception as e:
 }
 
 export const duckduckgoSearch = tool(
-  async ({ query, freshness, maxResults = 10 }: { query: string; freshness?: string; maxResults?: number }) => {
-    const results: DuckDuckGoResult[] = JSON.parse(await searchWithDDGS(query, maxResults));
+  async ({ query, maxResults = 10 }: { query: string; maxResults?: number }) => {
+    let results: DuckDuckGoResult[] | { error: string };
+    try {
+      results = JSON.parse(await searchWithDDGS(query, maxResults));
+    } catch (e) {
+      return `搜索出错: ${e instanceof Error ? e.message : String(e)}`;
+    }
 
     if (Array.isArray(results) && results.length === 0) {
       return "未找到相关结果";
@@ -64,7 +74,6 @@ export const duckduckgoSearch = tool(
     description: "使用 DuckDuckGo 搜索互联网信息。输入搜索关键词，返回搜索结果列表。",
     schema: z.object({
       query: z.string().describe("搜索关键词"),
-      freshness: z.string().optional().describe("时间过滤: day, week, month"),
       maxResults: z.number().optional().describe("最大结果数，默认 10"),
     }),
   }
