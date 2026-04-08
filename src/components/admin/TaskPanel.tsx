@@ -13,7 +13,11 @@ interface Task {
   createdAt: string;
 }
 
-export default function TaskPanel() {
+interface TaskPanelProps {
+  onRefreshKey?: number | string;
+}
+
+export default function TaskPanel({ onRefreshKey }: TaskPanelProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [runningTasks, setRunningTasks] = useState<Set<string>>(new Set());
@@ -38,6 +42,13 @@ export default function TaskPanel() {
   useEffect(() => {
     fetchTasks();
   }, []);
+
+  // 外部刷新信号
+  useEffect(() => {
+    if (onRefreshKey !== undefined) {
+      fetchTasks();
+    }
+  }, [onRefreshKey]);
 
   // 触发任务执行
   const runTask = async (taskId: string) => {
