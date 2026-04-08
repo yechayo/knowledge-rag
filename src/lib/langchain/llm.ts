@@ -2,7 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
 /**
- * 创建 GLM-5 LangChain 实例
+ * 创建 GLM 模型 LangChain 实例
  */
 export function createGLM5(config?: {
   temperature?: number;
@@ -16,7 +16,9 @@ export function createGLM5(config?: {
   return new ChatOpenAI({
     model: "glm-4-flash",
     apiKey,
-    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    configuration: {
+      baseURL: "https://open.bigmodel.cn/api/paas/v4",
+    },
     temperature: config?.temperature ?? 0.7,
     maxTokens: config?.maxTokens ?? 2000,
   });

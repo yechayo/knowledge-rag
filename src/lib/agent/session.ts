@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export interface SessionLock {
   release: () => Promise<void>;
@@ -106,12 +107,12 @@ export async function appendSessionMessage(
 
     if (!session || session.userId !== userId) return;
 
-    const messages = (session.messages as SessionMessage[]) || [];
+    const messages = (session.messages as unknown as SessionMessage[]) || [];
     messages.push({ role, content, timestamp: Date.now() });
 
     await tx.agentSession.update({
       where: { id: sessionId },
-      data: { messages },
+      data: { messages: messages as unknown as Prisma.InputJsonValue },
     });
   });
 }

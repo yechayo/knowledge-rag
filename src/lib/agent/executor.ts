@@ -1,9 +1,10 @@
 import { createGLM5 } from "@/lib/langchain/llm";
 import { duckduckgoSearch, createContent, listContent, deleteContent } from "./tools";
 import { getSystemPrompt, NEWS_AGENT_PROMPT } from "./prompts/react_agent";
-import { AgentExecutor, createReactAgent } from "@langchain/langgraph/prebuilt";
+import { createAgentExecutor, createReactAgent } from "@langchain/langgraph/prebuilt";
 
-const tools = [duckduckgoSearch, createContent, listContent, deleteContent];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const tools: any[] = [duckduckgoSearch, createContent, listContent, deleteContent];
 
 /** 默认超时时间: 5 分钟 */
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -24,13 +25,13 @@ export class AgentTimeoutError extends Error {
 export async function createNewsAgentExecutor() {
   const llm = createGLM5({ temperature: 0.7, maxTokens: 4000 });
 
-  const agent = createReactAgent({
+  const agent = await createReactAgent({
     llm,
     tools,
     prompt: getSystemPrompt(NEWS_AGENT_PROMPT),
   });
 
-  return new AgentExecutor({ agent, tools });
+  return createAgentExecutor({ agentRunnable: agent, tools });
 }
 
 /**
@@ -40,7 +41,7 @@ export async function createNewsAgentExecutor() {
  * @param timeoutMs 超时时间（毫秒），默认 5 分钟
  */
 async function invokeWithTimeout(
-  executor: AgentExecutor,
+  executor: ReturnType<typeof createAgentExecutor>,
   input: Record<string, unknown>,
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ) {
