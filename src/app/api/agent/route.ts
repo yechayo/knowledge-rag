@@ -4,17 +4,52 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { runNewsAgent } from "@/lib/agent/executor";
 import { getOrCreateSession, acquireSessionLock, appendSessionMessage } from "@/lib/agent/session";
+import { runTaskSchema, createTaskSchema } from "@/lib/validations";
 
-export async function POST(req: Request) {
-  // 管理员验证
+// 管理员认证辅助函数
+async function requireAdmin() {
   const session = await getServerSession(authOptions);
   const isAdmin = !!(session?.user as any)?.isAdmin;
   if (!isAdmin) {
+    throw new Error("Unauthorized");
+  }
+  return session;
+}
+
+// GET /api/agent - 列出所有任务 (需要管理员认证)
+export async function GET() {
+  try {
+    await requireAdmin();
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const tasks = await prisma.task.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+
+  return NextResponse.json({ tasks });
+}
+
+// POST /api/agent - 运行任务 (需要管理员认证 + taskId 验证)
+export async function POST(req: Request) {
+  try {
+    await requireAdmin();
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const { taskId } = await req.json();
+    const body = await req.json();
+    const parsed = runTaskSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid input", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { taskId } = parsed.data;
 
     // 获取任务配置
     const task = await prisma.task.findUnique({ where: { id: taskId } });
@@ -62,37 +97,34 @@ export async function POST(req: Request) {
   }
 }
 
-// GET /api/agent - 列出所有任务
-export async function GET() {
-  const tasks = await prisma.task.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-
-  return NextResponse.json({ tasks });
-}
-
-// PUT /api/agent/tasks - 创建新任务
+// PUT /api/agent - 创建新任务 (需要管理员认证 + Zod 验证)
 export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  const isAdmin = !!(session?.user as any)?.isAdmin;
-  if (!isAdmin) {
+  try {
+    await requireAdmin();
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json();
+  try {
+    const body = await req.json();
+    const parsed = createTaskSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid input", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
 
-  const task = await prisma.task.create({
-    data: {
-      name: body.name,
-      description: body.description,
-      agentType: body.agentType || "react",
-      triggerType: body.triggerType || "manual",
-      cronExpr: body.cronExpr,
-      tools: body.tools || [],
-      prompt: body.prompt,
-      isActive: body.isActive ?? true,
-    },
-  });
+    const task = await prisma.task.create({
+      data: parsed.data,
+    });
 
-  return NextResponse.json({ task }, { status: 201 });
+    return NextResponse.json({ task }, { status: 201 });
+  } catch (error) {
+    console.error("Create task failed:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Create task failed" },
+      { status: 500 }
+    );
+  }
 }
