@@ -3,9 +3,6 @@ import { duckduckgoSearch, createContent, listContent, deleteContent } from "./t
 import { getSystemPrompt, NEWS_AGENT_PROMPT } from "./prompts/react_agent";
 import { createAgentExecutor, createReactAgent } from "@langchain/langgraph/prebuilt";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tools: any[] = [duckduckgoSearch, createContent, listContent, deleteContent];
-
 /** 默认超时时间: 5 分钟 */
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -20,19 +17,32 @@ export class AgentTimeoutError extends Error {
 }
 
 /**
- * 创建新闻 Agent 执行器
+ * 创建 Agent 执行器核心逻辑
+ * @param tools 工具列表
+ * @param systemPrompt 系统提示词
  */
-export async function createNewsAgentExecutor() {
+async function createAgentExecutorCore(
+  tools: any[],
+  systemPrompt: string
+) {
   const llm = createGLM5({ temperature: 0.7, maxTokens: 4000 });
-
   const agent = await createReactAgent({
     llm,
     tools,
-    prompt: getSystemPrompt(NEWS_AGENT_PROMPT),
+    prompt: getSystemPrompt(systemPrompt),
   });
-
   return createAgentExecutor({ agentRunnable: agent, tools });
 }
+
+/**
+ * 创建新闻 Agent 执行器
+ */
+export async function createNewsAgentExecutor() {
+  const tools: any[] = [duckduckgoSearch, createContent, listContent, deleteContent];
+  return createAgentExecutorCore(tools, NEWS_AGENT_PROMPT);
+}
+
+export { createAgentExecutorCore };
 
 /**
  * 带超时控制的 agent 调用
