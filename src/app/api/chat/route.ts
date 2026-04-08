@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { generateHeadingAnchor } from '@/lib/heading-anchor';
+import { evaluateCitationQuality, getQualitySummary } from '@/lib/citation-evaluator';
+import { prisma } from '@/lib/prisma';
 
 /**
  * 用于接收 grouped 模式检索结果的单条 chunk 类型
@@ -186,6 +188,34 @@ buildContentBodySection(grouped.content_body) + '\n\n' +
 '完成自省后，直接输出最终回答（不要在回答中提及"自省"或任何反思过程）。如果自省发现问题，请先修正后再输出。';
 
   return prompt;
+}
+
+/**
+ * 多轮对话上下文管理
+ * 限制历史消息数量，避免 token 浪费
+ * @param messages 前端传来的完整对话历史
+ * @param maxHistoryRounds 最大保留对话轮数（每轮 = 用户+AI）
+ * @returns 精简后的对话历史
+ */
+function buildConversationHistory(
+  messages: Array<{ role: string; content: string }>,
+  maxHistoryRounds: number = 3
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  // 过滤出有效的用户和助手消息
+  const validMessages = messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+
+  // 如果消息数量超过限制，只保留最近 N 轮
+  const maxMessages = maxHistoryRounds * 2;
+  if (validMessages.length > maxMessages) {
+    return validMessages.slice(-maxMessages);
+  }
+
+  return validMessages;
 }
 
 /**
@@ -435,7 +465,67 @@ async function fetchContentListByKeywords(
 }
 
 /**
- * 使用多个关键词进行综合检索
+ * RRF (Reciprocal Rank Fusion) 算法
+ * 用于融合多个检索结果，按排名计算相关性分数
+ * @param results 每个关键词的检索结果数组
+ * @param k RRF 参数，通常取 60
+ * @returns 融合后的 chunkId -> RRF 分数 Map
+ */
+function reciprocalRankFusion<T extends { chunkId: string }>(
+  results: T[][],
+  k: number = 60
+): Map<string, number> {
+  const scores = new Map<string, number>();
+
+  for (const result of results) {
+    for (let rank = 0; rank < result.length; rank++) {
+      const chunkId = result[rank].chunkId;
+      // RRF 分数 = 1 / (k + rank)
+      const rrfScore = 1 / (k + rank + 1);
+      scores.set(chunkId, (scores.get(chunkId) || 0) + rrfScore);
+    }
+  }
+
+  return scores;
+}
+
+/**
+ * 使用 RRF 算法对 content_body 进行重排序
+ * @param contentBodyChunks 分组后的 content_body chunks
+ * @param originalResults 每个关键词检索返回的原始 content_body 数组
+ * @param limits 每个类型的数量限制
+ * @returns 重排序后的 content_body chunks
+ */
+function rerankContentBody(
+  contentBodyChunks: GroupedChunk[],
+  originalResults: GroupedChunk[][],
+  limits: Record<string, number>
+): GroupedChunk[] {
+  if (originalResults.length <= 1) {
+    // 单查询不需要 RRF
+    return contentBodyChunks;
+  }
+
+  // 使用 RRF 计算每个 chunk 的融合分数
+  const rrfScores = reciprocalRankFusion(originalResults);
+
+  // 将原始分数与 RRF 分数结合
+  const reranked = contentBodyChunks.map(chunk => ({
+    ...chunk,
+    // 综合分数 = RRF 分数 * 原始余弦相似度分数
+    // 这样做可以兼顾多查询融合和原始相似度
+    score: (rrfScores.get(chunk.chunkId) || 0) * (chunk.score || 1),
+  }));
+
+  // 按综合分数降序排序
+  reranked.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  // 截取指定数量
+  return reranked.slice(0, limits.content_body);
+}
+
+/**
+ * 使用多个关键词进行综合检索（带 RRF 重排序）
  */
 async function multiQueryRetrieve(
   baseUrl: string,
@@ -448,8 +538,13 @@ async function multiQueryRetrieve(
     content_body: [],
   };
 
-  // 使用 Set 来去重（基于 chunkId）
-  const seenChunkIds = new Set<string>();
+  // 每个 chunkType 的数量上限
+  const limits: Record<string, number> = {
+    nav_structure: 2,
+    content_meta: 5,
+    toc_entry: 5,
+    content_body: 8,
+  };
 
   // 并行发送多个检索请求
   const promises = keywords.map(async (keyword) => {
@@ -469,20 +564,20 @@ async function multiQueryRetrieve(
 
   const results = await Promise.all(promises);
 
-  // 合并去重后的结果
-  for (const group of results) {
-    for (const type of ['nav_structure', 'content_meta', 'toc_entry', 'content_body'] as const) {
-      const chunks = group[type];
-      const limits: Record<string, number> = {
-        nav_structure: 2,
-        content_meta: 5,
-        toc_entry: 5,
-        content_body: 8,
-      };
-
-      for (const chunk of chunks) {
-        if (!seenChunkIds.has(chunk.chunkId) && groupedResult[type].length < limits[type]) {
-          seenChunkIds.add(chunk.chunkId);
+  // 分别处理每个 chunkType
+  for (const type of ['nav_structure', 'content_meta', 'toc_entry', 'content_body'] as const) {
+    if (type === 'content_body') {
+      // content_body 使用 RRF 重排序
+      const allChunksByKeyword = results.map(r => r[type]);
+      const mergedChunks = mergeAndDedupeChunks(allChunksByKeyword, limits[type]);
+      groupedResult[type] = rerankContentBody(mergedChunks, allChunksByKeyword, limits);
+    } else {
+      // 其他类型使用简单的合并去重
+      const allChunks = results.flatMap(r => r[type]);
+      const seen = new Set<string>();
+      for (const chunk of allChunks) {
+        if (!seen.has(chunk.chunkId) && groupedResult[type].length < limits[type]) {
+          seen.add(chunk.chunkId);
           groupedResult[type].push(chunk);
         }
       }
@@ -490,6 +585,25 @@ async function multiQueryRetrieve(
   }
 
   return groupedResult;
+}
+
+/**
+ * 合并多个检索结果的 chunks 并去重
+ */
+function mergeAndDedupeChunks(chunksArray: GroupedChunk[][], limit: number): GroupedChunk[] {
+  const seen = new Set<string>();
+  const result: GroupedChunk[] = [];
+
+  for (const chunks of chunksArray) {
+    for (const chunk of chunks) {
+      if (!seen.has(chunk.chunkId) && result.length < limit) {
+        seen.add(chunk.chunkId);
+        result.push(chunk);
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -573,14 +687,12 @@ export async function POST(req: Request) {
 
     const systemPrompt = hasContent ? buildSystemPrompt(grouped) : NO_CONTENT_REPLY;
 
+    // 构建多轮对话上下文（限制最近 3 轮 = 6 条消息）
+    const conversationHistory = buildConversationHistory(messages.slice(0, -1), 3);
+
     const chatMessages = [
       { role: 'system' as const, content: systemPrompt },
-      ...messages
-        .slice(0, -1)
-        .map((m: { role: string; content: string }) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
+      ...conversationHistory,
       { role: 'user' as const, content: query },
     ];
 
@@ -591,6 +703,7 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
+        const startTime = Date.now();  // 记录请求开始时间
 
         try {
           // 调用智谱 GLM API（流式 + 思考模式）
@@ -642,6 +755,8 @@ export async function POST(req: Request) {
 
           const decoder = new TextDecoder();
           let buffer = '';
+          let fullAnswer = '';  // 收集完整回答用于评估
+          let usageInfo = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };  // Token 用量
 
           while (true) {
             const { done, value } = await reader.read();
@@ -661,6 +776,15 @@ export async function POST(req: Request) {
                 const parsed = JSON.parse(data);
                 const choice = parsed.choices?.[0];
 
+                // 提取 token 用量（如果有）
+                if (parsed.usage) {
+                  usageInfo = {
+                    promptTokens: parsed.usage.prompt_tokens || 0,
+                    completionTokens: parsed.usage.completion_tokens || 0,
+                    totalTokens: parsed.usage.total_tokens || 0,
+                  };
+                }
+
                 // 思考内容：暂不发送给前端
                 if (choice?.delta?.reasoning_content) {
                   // 可选：可将思考内容也发送给前端显示
@@ -669,6 +793,7 @@ export async function POST(req: Request) {
                 // 正式回答内容
                 const content = choice?.delta?.content;
                 if (content) {
+                  fullAnswer += content;  // 收集完整回答
                   controller.enqueue(
                     encoder.encode(
                       'data: ' + JSON.stringify({ type: 'answer', data: content }) + '\n\n'
@@ -682,6 +807,8 @@ export async function POST(req: Request) {
           }
 
           // 发送结构化引用来源
+          console.log('[DEBUG] sources.length:', sources.length, 'fullAnswer.length:', fullAnswer.length);
+
           if (sources.length > 0) {
             controller.enqueue(
               encoder.encode(
@@ -691,6 +818,47 @@ export async function POST(req: Request) {
                 }) + '\n\n'
               )
             );
+
+            // 引用召回率评估（静默进行，不影响用户体验）
+            console.log('[DEBUG] Starting citation evaluation...');
+            console.log('[DEBUG] fullAnswer:', fullAnswer.slice(0, 100));
+            console.log('[DEBUG] sources:', JSON.stringify(sources).slice(0, 200));
+
+            if (fullAnswer.length > 0) {
+              try {
+                const qualityReport = evaluateCitationQuality(fullAnswer, query, sources);
+                const summary = getQualitySummary(qualityReport);
+                console.log('[引用质量评估]', JSON.stringify({
+                  query: query.slice(0, 50),
+                  ...qualityReport,
+                  summary,
+                }));
+              } catch (evalError) {
+                console.error('[引用质量评估] 评估出错:', evalError);
+              }
+            } else {
+              console.log('[引用质量评估] fullAnswer 为空，跳过评估');
+            }
+          } else {
+            console.log('[引用质量评估] sources 为空，跳过评估');
+          }
+
+          // 记录使用日志
+          try {
+            await prisma.usageLog.create({
+              data: {
+                query: query.slice(0, 500),
+                answerLength: fullAnswer.length,
+                citations: sources.length,
+                latencyMs: Date.now() - startTime,
+                promptTokens: usageInfo.promptTokens,
+                completionTokens: usageInfo.completionTokens,
+                totalTokens: usageInfo.totalTokens,
+              },
+            });
+            console.log('[使用日志] 记录成功 - tokens:', usageInfo);
+          } catch (logError) {
+            console.error('[使用日志] 记录失败:', logError);
           }
 
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));

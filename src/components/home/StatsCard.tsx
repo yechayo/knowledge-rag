@@ -69,7 +69,14 @@ export default function StatsCard() {
     fetch("/api/stats", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("stats api failed"))))
       .then((data) => {
-        const daysSinceCreation = Number(data.daysSinceCreation ?? 0);
+        // 固定从 2026/3/9 开始计算运行天数
+        const startDate = new Date("2026-03-09");
+        const now = new Date();
+        const daysSinceCreation = Math.max(
+          0,
+          Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+        );
+
         const totalArticles = Number(data.totalArticles ?? 0);
         const totalProjects = Number(data.totalProjects ?? 0);
         const totalNotes = Number(data.totalNotes ?? 0);

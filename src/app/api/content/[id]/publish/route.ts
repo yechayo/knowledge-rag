@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { generateEmbeddings, vectorToPostgresFormat } from '@/lib/embedding';
 import { generateContentChunks, generateContentHash } from '@/lib/chunkGenerator';
 import { describeImage } from '@/lib/vision';
+import { buildImageDataUrl } from '@/lib/oss';
 import { randomUUID } from 'crypto';
 
 // POST /api/content/[id]/publish - 发布内容并生成向量索引（仅管理员）
@@ -73,8 +74,13 @@ export async function POST(
           failedImages.push(imageId);
           continue;
         }
-        const base64 = Buffer.from(image.data).toString('base64');
-        const dataUrl = `data:${image.mimeType};base64,${base64}`;
+
+        const dataUrl = await buildImageDataUrl(image);
+        if (!dataUrl) {
+          failedImages.push(`${imageId}(image file not found)`);
+          continue;
+        }
+
         const description = await describeImage(dataUrl);
         console.log(`[Vision] 图片 ${imageId} 描述: ${description}`);
         imageDescriptionChunks.push({

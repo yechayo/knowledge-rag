@@ -6,6 +6,7 @@ import { generateEmbeddings, vectorToPostgresFormat } from '@/lib/embedding';
 import { generateContentChunks, generateContentHash } from '@/lib/chunkGenerator';
 import { generateSiteStructureChunks } from '@/lib/siteIndexer';
 import { describeImage } from '@/lib/vision';
+import { buildImageDataUrl } from '@/lib/oss';
 import type { GeneratedChunk } from '@/lib/chunkGenerator';
 import { randomUUID } from 'crypto';
 
@@ -123,8 +124,13 @@ export async function POST(req: Request) {
           try {
             const image = await prisma.image.findUnique({ where: { id: imageId } });
             if (!image) continue;
-            const base64 = Buffer.from(image.data).toString('base64');
-            const dataUrl = `data:${image.mimeType};base64,${base64}`;
+
+            const dataUrl = await buildImageDataUrl(image);
+            if (!dataUrl) {
+              reindexErrors.push(`图片${imageId}: image file not found`);
+              continue;
+            }
+
             const description = await describeImage(dataUrl);
             console.log(`[Reindex Vision] 图片 ${imageId} 描述: ${description}`);
             imageDescriptionChunks.push({

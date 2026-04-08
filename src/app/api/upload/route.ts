@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isOssEnabled, uploadImageToOss } from '@/lib/oss';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -29,8 +30,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 400 });
     }
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const bytes = Buffer.from(await file.arrayBuffer());
     const contentId = formData.get('contentId') as string | null;
+
+    if (isOssEnabled()) {
+      const image = await prisma.image.create({
+        data: {
+          data: Buffer.alloc(0),
+          mimeType: file.type,
+          ...(contentId ? { contentId } : {}),
+        },
+      });
+
+      try {
+        await uploadImageToOss(image.id, file.type, bytes);
+      } catch (error) {
+        await prisma.image.delete({ where: { id: image.id } }).catch(() => null);
+        throw error;
+      }
+
+      return NextResponse.json({
+        url: `/api/images/${image.id}`,
+        id: image.id,
+        storage: 'oss',
+      });
+    }
 
     const image = await prisma.image.create({
       data: {
@@ -40,7 +64,11 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ url: `/api/images/${image.id}`, id: image.id });
+    return NextResponse.json({
+      url: `/api/images/${image.id}`,
+      id: image.id,
+      storage: 'database',
+    });
   } catch (error) {
     console.error('Failed to upload file:', error);
     return NextResponse.json(
