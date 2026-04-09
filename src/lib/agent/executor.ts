@@ -1,4 +1,4 @@
-import { createGLM5 } from "@/lib/langchain/llm";
+import { createAgentModel } from "@/lib/langchain/llm";
 import { duckduckgoSearch, createContent, listContent, deleteContent } from "./tools";
 import { getSystemPrompt, NEWS_AGENT_PROMPT } from "./prompts/react_agent";
 import { createAgentExecutor, createReactAgent } from "@langchain/langgraph/prebuilt";
@@ -25,7 +25,7 @@ async function createAgentExecutorCore(
   tools: any[],
   systemPrompt: string
 ) {
-  const llm = createGLM5({ temperature: 0.7, maxTokens: 4000 });
+  const llm = createAgentModel({ temperature: 0.7, maxTokens: 4000 });
   const agent = await createReactAgent({
     llm,
     tools,

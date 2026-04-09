@@ -13,6 +13,8 @@ interface MessageBubbleProps {
     id: string;
     role: "user" | "assistant";
     content: string;
+    thinking?: string;
+    thinkingComplete?: boolean;
     toolCalls?: ToolCallBlock[];
     isComplete?: boolean;
     error?: string;
@@ -53,6 +55,18 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           ) : (
             <>
+              {/* Thinking content - 思考时自动展开，回答开始后收起 */}
+              {message.thinking && (
+                <details className="mb-2" open={!message.thinkingComplete}>
+                  <summary className="cursor-pointer text-xs text-[var(--text-3)] hover:text-[var(--text-2)] px-1 select-none">
+                    💭 思考过程
+                  </summary>
+                  <div className="mt-1 px-3 py-2 rounded-xl rounded-bl-md bg-[var(--accent)]/5 border border-[var(--accent)]/20 text-xs text-[var(--text-2)] leading-relaxed whitespace-pre-wrap font-mono">
+                    {message.thinking}
+                  </div>
+                </details>
+              )}
+
               {/* Text content */}
               <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-[var(--card)] border border-[var(--border)] text-[var(--text-1)] text-sm leading-relaxed">
                 {message.content}

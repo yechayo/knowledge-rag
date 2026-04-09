@@ -11,17 +11,42 @@ import { Prisma } from "@prisma/client";
  * 从 AgentSession 加载对话历史
  */
 export async function loadChatHistory(sessionId: string): Promise<ChatMessage[]> {
-  const session = await prisma.agentSession.findUnique({
-    where: { id: sessionId },
-    select: { messages: true },
-  });
+  try {
+    const session = await prisma.agentSession.findUnique({
+      where: { id: sessionId },
+      select: { messages: true },
+    });
 
-  if (!session) {
+    if (!session) {
+      return [];
+    }
+
+    // 确保 messages 是数组类型，如果不是则返回空数组
+    if (!session.messages) {
+      return [];
+    }
+
+    // 如果是字符串（未解析的 JSON），尝试解析
+    if (typeof session.messages === "string") {
+      try {
+        const parsed = JSON.parse(session.messages);
+        return Array.isArray(parsed) ? parsed as ChatMessage[] : [];
+      } catch {
+        console.error("[loadChatHistory] Failed to parse messages JSON:", session.messages);
+        return [];
+      }
+    }
+
+    // 如果是数组，直接返回（通过 unknown 中转避免 TS 类型检查问题）
+    if (Array.isArray(session.messages)) {
+      return session.messages as unknown as ChatMessage[];
+    }
+
+    return [];
+  } catch (err) {
+    console.error("[loadChatHistory] Error loading chat history:", err);
     return [];
   }
-
-  const messages = session.messages as unknown as ChatMessage[];
-  return Array.isArray(messages) ? messages : [];
 }
 
 /**
@@ -31,13 +56,17 @@ export async function saveChatHistory(
   sessionId: string,
   messages: ChatMessage[]
 ): Promise<void> {
-  await prisma.agentSession.update({
-    where: { id: sessionId },
-    data: {
-      messages: messages as unknown as Prisma.InputJsonValue,
-      updatedAt: new Date(),
-    },
-  });
+  try {
+    await prisma.agentSession.update({
+      where: { id: sessionId },
+      data: {
+        messages: messages as unknown as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error("[saveChatHistory] Error saving chat history:", err);
+  }
 }
 
 /**
@@ -48,24 +77,41 @@ export async function appendChatMessage(
   sessionId: string,
   message: ChatMessage
 ): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    const session = await tx.agentSession.findUnique({
-      where: { id: sessionId },
+  try {
+    await prisma.$transaction(async (tx) => {
+      const session = await tx.agentSession.findUnique({
+        where: { id: sessionId },
+      });
+
+      if (!session) return;
+
+      // 安全地获取并追加消息
+      let messages: ChatMessage[] = [];
+      if (session.messages) {
+        if (typeof session.messages === "string") {
+          try {
+            messages = JSON.parse(session.messages);
+          } catch {
+            messages = [];
+          }
+        } else if (Array.isArray(session.messages)) {
+          messages = session.messages as unknown as ChatMessage[];
+        }
+      }
+
+      messages.push(message);
+
+      await tx.agentSession.update({
+        where: { id: sessionId },
+        data: {
+          messages: messages as unknown as Prisma.InputJsonValue,
+          updatedAt: new Date(),
+        },
+      });
     });
-
-    if (!session) return;
-
-    const messages = (session.messages as unknown as ChatMessage[]) || [];
-    messages.push(message);
-
-    await tx.agentSession.update({
-      where: { id: sessionId },
-      data: {
-        messages: messages as unknown as Prisma.InputJsonValue,
-        updatedAt: new Date(),
-      },
-    });
-  });
+  } catch (err) {
+    console.error("[appendChatMessage] Error appending message:", err);
+  }
 }
 
 /**
@@ -123,23 +169,14 @@ export async function updateSessionStats(
     compactCount?: number;
   }
 ): Promise<void> {
-  const updateData: Record<string, unknown> = {};
-
-  if (stats.tokenUsage !== undefined) {
-    updateData.tokenUsage = stats.tokenUsage;
-  }
-  if (stats.messageCount !== undefined) {
-    updateData.messageCount = stats.messageCount;
-  }
-  if (stats.compactCount !== undefined) {
-    updateData.compactCount = stats.compactCount;
-  }
-
-  if (Object.keys(updateData).length === 0) return;
-
+  // 使用 Prisma 的 update 方法，直接指定要更新的字段，避免类型转换问题
   await prisma.agentSession.update({
     where: { id: sessionId },
-    data: updateData as unknown as Prisma.InputJsonValue,
+    data: {
+      ...(stats.tokenUsage !== undefined && { tokenUsage: stats.tokenUsage }),
+      ...(stats.messageCount !== undefined && { messageCount: stats.messageCount }),
+      ...(stats.compactCount !== undefined && { compactCount: stats.compactCount }),
+    },
   });
 }
 

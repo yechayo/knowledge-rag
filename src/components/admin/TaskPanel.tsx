@@ -203,7 +203,7 @@ export default function TaskPanel({ onRefreshKey }: TaskPanelProps) {
                   triggerType: "manual",
                   prompt:
                     "你是一个新闻助手，请搜索今日新闻并整理成早报发布到网站",
-                  tools: ["duckduckgo_search", "create_content", "list_content", "delete_content"],
+                  tools: ["tavily_search", "create_content", "list_content", "delete_content"],
                 }),
               });
               fetchTasks();

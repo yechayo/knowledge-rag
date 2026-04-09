@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ModelSelector, { type ModelConfig } from "@/components/admin/ModelSelector";
+import SkillApprovalModal from "./SkillApprovalModal";
 
 export interface ToolCallBlock {
   id: string;
@@ -42,15 +43,11 @@ export default function AgentChat() {
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const contentBufferRef = useRef<{ [assistantId: string]: string }>({});
-  const contentTypingRef = useRef<{ [assistantId: string]: number }>({});
-  const contentTimerRef = useRef<{ [assistantId: string]: ReturnType<typeof setTimeout> | null }>({});
-  const thinkingBufferRef = useRef<{ [assistantId: string]: string }>({});
-  const thinkingTypingRef = useRef<{ [assistantId: string]: number }>({});
-  const thinkingTimerRef = useRef<{ [assistantId: string]: ReturnType<typeof setTimeout> | null }>({});
   const thinkingDoneRef = useRef<{ [assistantId: string]: boolean }>({});
   const toolIdCounterRef = useRef(0);
   const skillMenuRef = useRef<HTMLDivElement>(null);
@@ -64,6 +61,18 @@ export default function AgentChat() {
         if (data.skills) setSkills(data.skills);
       })
       .catch(console.warn);
+  }, []);
+
+  // 加载待审批数量
+  useEffect(() => {
+    async function fetchPendingCount() {
+      try {
+        const res = await fetch("/api/agent/skills/requests?status=pending");
+        const data = await res.json();
+        setPendingCount(data.requests?.length || 0);
+      } catch {}
+    }
+    fetchPendingCount();
   }, []);
 
   // 点击外部关闭菜单
@@ -204,7 +213,7 @@ export default function AgentChat() {
               if (data.data?.sessionKey) setSessionKey(data.data.sessionKey);
               if (data.data?.activeSkill) setActiveSkill(data.data.activeSkill);
             } else if (data.type === "delta") {
-              // 第一个 delta 到达时标记 thinking 完成，自动关闭思考窗口
+              // 第一个 delta 到达时标记 thinking 完成
               if (!thinkingDoneRef.current[assistantId]) {
                 thinkingDoneRef.current[assistantId] = true;
                 setMessages((prev) =>
@@ -217,56 +226,25 @@ export default function AgentChat() {
               const chunk = data.data?.content || "";
               if (!chunk) continue;
 
-              // 追加到缓冲区
-              const currentLen = contentTypingRef.current[assistantId] || 0;
-              contentBufferRef.current[assistantId] = (contentBufferRef.current[assistantId] || "") + chunk;
-
-              // 打字机效果：停止旧计时器，从当前可见位置继续打字
-              if (contentTimerRef.current[assistantId]) {
-                clearTimeout(contentTimerRef.current[assistantId]!);
-              }
-              const fullContent = contentBufferRef.current[assistantId];
-              const typeNext = () => {
-                const visible = contentTypingRef.current[assistantId] || 0;
-                const next = visible + 1;
-                contentTypingRef.current[assistantId] = next;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, content: fullContent.slice(0, next) }
-                      : m
-                  )
-                );
-                if (next < fullContent.length) {
-                  contentTimerRef.current[assistantId] = setTimeout(typeNext, 15);
-                }
-              };
-              contentTimerRef.current[assistantId] = setTimeout(typeNext, 15);
+              // 直接追加到 content，React 18+ 的自动批处理会自然合并高频更新
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + chunk }
+                    : m
+                )
+              );
             } else if (data.type === "thinking") {
               const content = data.data?.content || "";
-              thinkingBufferRef.current[assistantId] = (thinkingBufferRef.current[assistantId] || "") + content;
-              // 打字机效果：每次新内容追加时，重置计时器，从当前可见位置继续打字
-              if (thinkingTimerRef.current[assistantId]) {
-                clearTimeout(thinkingTimerRef.current[assistantId]!);
-              }
-              const startLen = thinkingTypingRef.current[assistantId] || 0;
-              const fullLen = thinkingBufferRef.current[assistantId].length;
-              const typeNextChunk = () => {
-                const currentLen = thinkingTypingRef.current[assistantId] || 0;
-                const nextLen = Math.min(currentLen + 3, fullLen);
-                thinkingTypingRef.current[assistantId] = nextLen;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, thinking: thinkingBufferRef.current[assistantId].slice(0, nextLen) }
-                      : m
-                  )
-                );
-                if (nextLen < fullLen) {
-                  thinkingTimerRef.current[assistantId] = setTimeout(typeNextChunk, 15);
-                }
-              };
-              thinkingTimerRef.current[assistantId] = setTimeout(typeNextChunk, 15);
+              if (!content) continue;
+              // 直接追加到 thinking
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, thinking: (m.thinking || "") + content }
+                    : m
+                )
+              );
             } else if (data.type === "tool_start") {
               const toolBlock: ToolCallBlock = {
                 id: `tool-${++toolIdCounterRef.current}`,
@@ -300,55 +278,20 @@ export default function AgentChat() {
                 })
               );
             } else if (data.type === "done") {
-              if (data.data?.toolCompleted) {
-                // 工具执行完毕，停止思考打字机，但不结束消息
-                // 继续等待模型生成最终回答
-                if (thinkingTimerRef.current[assistantId]) {
-                  clearTimeout(thinkingTimerRef.current[assistantId]!);
-                  thinkingTimerRef.current[assistantId] = null;
-                }
-                // 重置 content buffer，准备接收最终回答
-                contentBufferRef.current[assistantId] = "";
-                contentTypingRef.current[assistantId] = 0;
-                if (contentTimerRef.current[assistantId]) {
-                  clearTimeout(contentTimerRef.current[assistantId]!);
-                  contentTimerRef.current[assistantId] = null;
-                }
-              } else {
-                // 真正结束：停止所有打字机，立即显示完整内容
-                if (thinkingTimerRef.current[assistantId]) {
-                  clearTimeout(thinkingTimerRef.current[assistantId]!);
-                  thinkingTimerRef.current[assistantId] = null;
-                }
-                if (contentTimerRef.current[assistantId]) {
-                  clearTimeout(contentTimerRef.current[assistantId]!);
-                  contentTimerRef.current[assistantId] = null;
-                }
-                const fullThinking = thinkingBufferRef.current[assistantId] || "";
-                const fullContent = contentBufferRef.current[assistantId] || "";
-                setMessages((prev) =>
-                  prev.map((m) => m.id === assistantId
-                    ? { ...m, thinking: fullThinking, thinkingComplete: true, content: fullContent, isComplete: true }
-                    : m)
-                );
-              }
+              // 流结束，标记消息完成
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantId
+                  ? { ...m, thinkingComplete: true, isComplete: true }
+                  : m)
+              );
             } else if (data.type === "error") {
               const errorMsg = typeof data.data === "string"
                 ? data.data
                 : data.data?.message || "Unknown error";
-              // 停止所有打字机
-              if (thinkingTimerRef.current[assistantId]) {
-                clearTimeout(thinkingTimerRef.current[assistantId]!);
-                thinkingTimerRef.current[assistantId] = null;
-              }
-              if (contentTimerRef.current[assistantId]) {
-                clearTimeout(contentTimerRef.current[assistantId]!);
-                contentTimerRef.current[assistantId] = null;
-              }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
-                    ? { ...m, thinking: thinkingBufferRef.current[assistantId] || m.thinking, thinkingComplete: true, content: contentBufferRef.current[assistantId] || m.content, isComplete: true, error: errorMsg }
+                    ? { ...m, thinkingComplete: true, isComplete: true, error: errorMsg }
                     : m
                 )
               );
@@ -373,18 +316,6 @@ export default function AgentChat() {
         );
       }
     } finally {
-      contentBufferRef.current[assistantId] = "";
-      contentTypingRef.current[assistantId] = 0;
-      if (contentTimerRef.current[assistantId]) {
-        clearTimeout(contentTimerRef.current[assistantId]!);
-        contentTimerRef.current[assistantId] = null;
-      }
-      thinkingBufferRef.current[assistantId] = "";
-      thinkingTypingRef.current[assistantId] = 0;
-      if (thinkingTimerRef.current[assistantId]) {
-        clearTimeout(thinkingTimerRef.current[assistantId]!);
-        thinkingTimerRef.current[assistantId] = null;
-      }
       thinkingDoneRef.current[assistantId] = false;
       setIsLoading(false);
       setCurrentAssistantId(null);
@@ -526,6 +457,22 @@ export default function AgentChat() {
             </div>
           )}
 
+          {/* 审批按钮 */}
+          <button
+            onClick={() => setShowApprovalModal(true)}
+            className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-[var(--text-3)] transition-colors hover:bg-[var(--card-hover)] hover:text-[var(--text-1)]"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            审批
+            {pendingCount > 0 && (
+              <span className="h-4 w-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={startNewSession}
             disabled={isLoading}
@@ -615,6 +562,15 @@ export default function AgentChat() {
           </button>
         </div>
       </div>
+
+      {/* Skill 审批弹窗 */}
+      <SkillApprovalModal
+        isOpen={showApprovalModal}
+        onClose={() => setShowApprovalModal(false)}
+        onUpdate={() => {
+          setPendingCount((c) => Math.max(0, c - 1));
+        }}
+      />
     </div>
   );
 }

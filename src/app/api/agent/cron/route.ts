@@ -1,67 +1,85 @@
-// src/app/api/agent/cron/route.ts
+/**
+ * Cron API 路由
+ *
+ * GET /api/agent/cron
+ *   - 手动触发一次检查 + 执行到期任务
+ *   - 也会自动启动调度器（如果未启动）
+ *
+ * POST /api/agent/cron
+ *   - 手动触发指定任务执行
+ *   - body: { taskId: string, forced?: boolean }
+ */
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { runTask } from "@/lib/agent/executor";
-import { getOrCreateSession, acquireSessionLock } from "@/lib/agent/session";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { getCronService, startCronService } from "@/lib/agent/cron";
 
-// Vercel Cron 触发此端点
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const isAdmin = !!(session?.user as any)?.isAdmin;
+  if (!isAdmin) throw new Error("Unauthorized");
+}
+
 export async function GET(req: Request) {
-  // 验证 Cron secret（可选）
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  try {
+    await requireAdmin();
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    // 获取所有 active 的 cron 任务
-    const cronTasks = await prisma.task.findMany({
-      where: {
-        triggerType: "cron",
-        isActive: true,
-        cronExpr: { not: null },
-      },
+    // 启动/获取调度器
+    const service = await startCronService();
+
+    // 获取状态
+    const status = await service.status();
+
+    return NextResponse.json({
+      message: "Cron service is running",
+      status,
     });
+  } catch (error) {
+    console.error("[Cron] GET error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to get cron status" },
+      { status: 500 }
+    );
+  }
+}
 
-    const results = [];
+export async function POST(req: Request) {
+  try {
+    await requireAdmin();
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    for (const task of cronTasks) {
-      // 创建 isolated session
-      const sessionKey = `agent:main:cron:${task.name}-${Date.now()}`;
-      const agentSession = await getOrCreateSession(sessionKey, task.agentType, "system");
+  try {
+    const body = await req.json();
+    const { taskId, forced } = body;
 
-      // 尝试获取锁
-      const lock = await acquireSessionLock(agentSession.id, "system");
-      if (!lock) {
-        results.push({ taskId: task.id, status: "skipped", reason: "Agent is busy" });
-        continue;
-      }
+    if (!taskId) {
+      return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+    }
 
-      try {
-        if (task.agentType === "react") {
-          await runTask({ prompt: task.prompt ?? "" });
-          results.push({ taskId: task.id, status: "success" });
-        }
-      } catch (error) {
-        results.push({
-          taskId: task.id,
-          status: "error",
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      } finally {
-        await lock.release();
-      }
+    const service = await startCronService();
+    const result = await service.run(taskId, forced === true);
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.reason || "Failed to run task" },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({
-      executed: results.length,
-      results,
+      message: "Task executed successfully",
+      taskId,
     });
   } catch (error) {
-    console.error("Cron execution failed:", error);
+    console.error("[Cron] POST error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Cron execution failed" },
+      { error: error instanceof Error ? error.message : "Failed to run task" },
       { status: 500 }
     );
   }

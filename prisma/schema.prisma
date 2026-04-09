@@ -188,3 +188,68 @@ model AgentMemory {
   @@index([isPrivate])
   @@index([updatedAt])
 }
+
+// ============ Skill 市场系统 ============
+
+// Skill 市场条目（管理员发布）
+model SkillMarket {
+  id           String    @id @default(cuid())
+  name         String    @unique
+  description  String?
+  author       String?
+  version      String    @default("1.0.0")
+  sourceType   String?   // "github" | "local" | "url"
+  sourceUrl    String?
+  category     String    @default("general")
+  tags        Json      @default("[]")
+  installCount Int       @default(0)
+  status       String    @default("approved") // pending | approved | rejected
+  manifest     Json?     // 完整的 manifest 信息
+  lastSyncedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  installedSkills InstalledSkill[]
+  installRequests SkillInstallRequest[]
+
+  @@index([status])
+  @@index([category])
+  @@index([name])
+}
+
+// 用户已安装的 Skill
+model InstalledSkill {
+  id          String   @id @default(cuid())
+  userId      String
+  skillName   String
+  version     String   @default("1.0.0")
+  status      String   @default("pending_approval") // pending_approval | active | disabled
+  localPath   String?
+  marketId    String?
+  market      SkillMarket? @relation(fields: [marketId], references: [id])
+  approvedAt  DateTime?
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, skillName])
+  @@index([userId])
+  @@index([status])
+}
+
+// Skill 安装申请
+model SkillInstallRequest {
+  id         String   @id @default(cuid())
+  userId     String
+  skillName  String
+  version    String   @default("1.0.0")
+  reason     String?
+  status     String   @default("pending") // pending | approved | rejected
+  marketId   String?
+  market     SkillMarket? @relation(fields: [marketId], references: [id])
+  reviewedAt DateTime?
+  reviewedBy String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([status])
+}
