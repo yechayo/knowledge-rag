@@ -4,7 +4,7 @@ import { createAgentModel, type AgentModelConfig } from "@/lib/langchain/llm";
 import { getOrCreateSession } from "@/lib/agent/session";
 import { createQueryEngine } from "@/lib/agent/chat";
 import { ADMIN_CHAT_PROMPT, ADMIN_CHAT_NEGATIVE_PROMPT } from "@/lib/agent/prompts/admin_chat";
-import { HumanMessage, AIMessage, trimMessages, BaseMessage } from "@langchain/core/messages";
+import { HumanMessage, trimMessages, BaseMessage } from "@langchain/core/messages";
 import { getSkillPromptWithUserInstalled } from "@/lib/agent/skills";
 import { resolveSkillContext } from "@/lib/agent/skillRouter";
 import {
@@ -113,7 +113,6 @@ export async function POST(req: Request) {
   const [projectContext, memories, teamMemories] = await Promise.all([loadProjectContext(), loadMemories(userId), loadTeamMemories()]);
   const memorySection = formatMemoriesForPrompt([...memories, ...teamMemories]);
   const contextSection = projectContext ? `\n\n${projectContext}` : "";
-  const systemPrompt = [skillPrompt, contextSection, memorySection, workingContext, "\n\n回答要求：简洁、直接、不重复。"].join("");
 
   // 工具注册（带 Guard 包装）
   const limits = { ...DEFAULT_RESOURCE_LIMITS };
@@ -128,19 +127,29 @@ export async function POST(req: Request) {
   let persistentHistory: any[] = [];
   try { persistentHistory = await engine.getMessages(); } catch {}
 
-  // 移除历史中最后一条 assistant 消息，防止 MiniMax 把它当作"续写起点"复读
-  // 功能性上下文（工具结果）已通过工作上下文注入 system prompt，不依赖 assistant 历史
-  const lastAssistantIdx = persistentHistory.map((h: any) => h.role).lastIndexOf("assistant");
-  const historyForModel = lastAssistantIdx >= 0
-    ? [...persistentHistory.slice(0, lastAssistantIdx), ...persistentHistory.slice(lastAssistantIdx + 1)]
-    : persistentHistory;
+  // 历史对话作为上下文注入 system prompt（不是作为消息流的一部分）
+  // 这样模型知道之前说了什么，但不会"续写"之前的 assistant 消息
+  let historyForContext = persistentHistory;
+  if (historyForContext.length > 0 && historyForContext[historyForContext.length - 1].role === "user") {
+    historyForContext = historyForContext.slice(0, -1);
+  }
+  const historyContext = historyForContext.length > 0
+    ? "\n\n【历史对话（仅供参考，不要重复其中内容，只回答用户最新消息）】\n"
+      + historyForContext.map((h: any) => {
+          const role = h.role === "user" ? "用户" : "助手";
+          const content = typeof h.content === "string" ? h.content : String(h.content);
+          return `${role}: ${content}`;
+        }).join("\n")
+    : "";
 
-  const allMessages = historyForModel.map((h: any) => {
-    const content = typeof h.content === "string" ? h.content : String(h.content);
-    if (h.role === "assistant") return new AIMessage(content);
-    return new HumanMessage(content);
-  });
-  allMessages.push(new HumanMessage(cleanMessage));
+  const systemPrompt = [
+    skillPrompt, contextSection, memorySection, workingContext, historyContext,
+    `\n\n当前时间：${new Date().toISOString()}`,
+    "\n\n回答要求：简洁、直接、不重复。只回答用户最新消息。",
+  ].join("");
+
+  // 消息流只发送当前用户消息（历史已在 system prompt 中）
+  const allMessages = [new HumanMessage(cleanMessage)];
 
   const inputMessages = await trimMessages(allMessages, {
     maxTokens: 4000,
