@@ -32,13 +32,9 @@ export async function retrieveNode(
   }
 
   try {
-    // baseUrl 可能是完整 URL（如 http://example.com/api/retrieve）或相对路径（如 /api/retrieve）
+    // baseUrl 通常是 http://host/api/retrieve，直接使用即可
     let retrieveUrl = config.baseUrl;
-    if (retrieveUrl.endsWith('/api/retrieve')) {
-      retrieveUrl = retrieveUrl + '/retrieve';
-    } else if (retrieveUrl.endsWith('/retrieve')) {
-      // 已经是正确格式
-    } else if (!retrieveUrl.includes('/retrieve')) {
+    if (!retrieveUrl.includes('/retrieve')) {
       retrieveUrl = retrieveUrl + '/api/retrieve';
     }
 

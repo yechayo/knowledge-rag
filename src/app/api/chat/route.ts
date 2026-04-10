@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server';
 import { generateHeadingAnchor } from '@/lib/heading-anchor';
 import { evaluateCitationQuality, getQualitySummary } from '@/lib/citation-evaluator';
 import { prisma } from '@/lib/prisma';
-import { runReActChat } from '@/lib/agent/graph';
+import { Prisma } from '@prisma/client';
 import { createReadOnlyToolRegistry } from '@/lib/agent/tools/registry';
 import { createSSESender, SSE_HEADERS } from '@/lib/agent/stream/sse';
 import { LoopGuard, DEFAULT_RESOURCE_LIMITS } from '@/lib/agent/guard';
 import { createAgentModel } from '@/lib/langchain/llm';
 import { HumanMessage, AIMessage, trimMessages, BaseMessage } from '@langchain/core/messages';
 import { REACT_CHAT_PROMPT, REACT_CHAT_NO_CONTENT_PROMPT } from '@/lib/agent/prompts/react_chat';
+import { getOrCreateSession } from '@/lib/agent/session';
+import { createQueryEngine } from '@/lib/agent/chat';
+import { runAgentStream, type ToolResultEntry } from '@/lib/agent/stream/agentRunner';
 
 /**
  * 用于接收 grouped 模式检索结果的单条 chunk 类型
@@ -553,49 +556,49 @@ function extractSources(grouped: GroupedResult): SourceCitation[] {
   return Array.from(seen.values());
 }
 
-/**
- * 构建多轮对话上下文
- */
-function buildConversationHistory(
-  messages: Array<{ role: string; content: string }>,
-  maxHistoryRounds: number = 3
-): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const validMessages = messages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+/** 从 session metadata 读取上轮工具结果（工作上下文） */
+async function loadWorkingContext(sessionId: string): Promise<string> {
+  const session = await prisma.agentSession.findUnique({
+    where: { id: sessionId },
+    select: { metadata: true },
+  });
+  if (!session?.metadata) return "";
+  const meta = session.metadata as Record<string, unknown>;
+  const results = meta.toolResults as ToolResultEntry[] | undefined;
+  if (!results?.length) return "";
 
-  const maxMessages = maxHistoryRounds * 2;
-  if (validMessages.length > maxMessages) {
-    return validMessages.slice(-maxMessages);
-  }
+  const lines = results.map((r) => `[${r.toolName}]\n${r.result}`);
+  return `\n\n【上轮工具结果（工作上下文）】\n${lines.join("\n\n---\n\n")}\n`;
+}
 
-  return validMessages;
+/** 将本轮工具结果持久化到 session metadata */
+async function saveWorkingContext(sessionId: string, toolResults: ToolResultEntry[]): Promise<void> {
+  if (!toolResults.length) return;
+  await prisma.$transaction(async (tx) => {
+    const session = await tx.agentSession.findUnique({ where: { id: sessionId } });
+    if (!session) return;
+    const meta = (session.metadata as Record<string, unknown>) || {};
+    meta.toolResults = toolResults;
+    await tx.agentSession.update({
+      where: { id: sessionId },
+      data: { metadata: meta as unknown as Prisma.InputJsonValue },
+    });
+  });
 }
 
 /**
  * POST /api/chat - 全局 RAG 聊天接口（ReAct 架构）
- * 优先使用知识库，没有则主动搜索互联网
+ * 使用 QueryEngine 持久化对话历史，与 Admin Agent 对齐
  */
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { message, sessionKey } = await req.json();
 
-    if (!messages || !Array.isArray(messages)) {
-      return new Response('Missing messages', { status: 400 });
+    if (!message || typeof message !== 'string') {
+      return new Response('Missing message', { status: 400 });
     }
 
-    const lastUserMessage = messages
-      .filter((m: { role: string }) => m.role === 'user')
-      .pop();
-
-    if (!lastUserMessage?.content) {
-      return new Response('Missing user message', { status: 400 });
-    }
-
-    const query = lastUserMessage.content;
+    const query = message.trim();
     const apiKey = process.env.BIGMODEL_API_KEY;
 
     if (!apiKey) {
@@ -604,6 +607,25 @@ export async function POST(req: Request) {
         { headers: SSE_HEADERS }
       );
     }
+
+    // 会话初始化（使用 QueryEngine 持久化历史）
+    const key = sessionKey || `rag:chat:${Date.now()}`;
+    let session;
+    try { session = await getOrCreateSession(key, 'chat', 'anonymous'); } catch {
+      return new Response('data: ' + JSON.stringify({ type: 'error', data: 'Session error' }) + '\n\n', { status: 500, headers: SSE_HEADERS });
+    }
+
+    let engine;
+    try { engine = await createQueryEngine(key, 'anonymous', 'chat', { apiKey }); } catch {
+      return new Response('data: ' + JSON.stringify({ type: 'error', data: 'Session error' }) + '\n\n', { status: 500, headers: SSE_HEADERS });
+    }
+
+    let engineInitialized = false;
+    try { await engine.initialize(); engineInitialized = true; } catch {
+      return new Response('data: ' + JSON.stringify({ type: 'error', data: 'Session lock error' }) + '\n\n', { status: 409, headers: SSE_HEADERS });
+    }
+
+    try { await engine.addUserMessage(query); } catch {}
 
     // RRF 多关键词检索（保留原有逻辑）
     const baseUrl = new URL('/api/retrieve', req.url).toString();
@@ -637,15 +659,25 @@ export async function POST(req: Request) {
       grouped.content_body.length > 0;
 
     const knowledgeBaseContext = buildKnowledgeBaseContext(grouped);
-    const systemPrompt = hasContent
+    const baseSystemPrompt = hasContent
       ? REACT_CHAT_PROMPT.replace('{KNOWLEDGE_BASE}', knowledgeBaseContext)
       : REACT_CHAT_NO_CONTENT_PROMPT;
 
-    // 构建对话历史
-    const conversationHistory = buildConversationHistory(messages.slice(0, -1), 3);
-    const allMessages = conversationHistory.map((h) => {
-      if (h.role === 'assistant') return new AIMessage(h.content);
-      return new HumanMessage(h.content);
+    // 加载工作上下文 + 构建完整 systemPrompt
+    const workingContext = await loadWorkingContext(session.id);
+    const systemPrompt = workingContext
+      ? baseSystemPrompt + workingContext + '\n\n回答要求：简洁、直接、不重复。'
+      : baseSystemPrompt + '\n\n回答要求：简洁、直接、不重复。';
+
+    // 加载历史（从 DB）
+    try { await engine.checkAndCompact(baseSystemPrompt); } catch {}
+    let persistentHistory: any[] = [];
+    try { persistentHistory = await engine.getMessages(); } catch {}
+
+    const allMessages = persistentHistory.map((h: any) => {
+      const content = typeof h.content === 'string' ? h.content : String(h.content);
+      if (h.role === 'assistant') return new AIMessage(content);
+      return new HumanMessage(content);
     });
     allMessages.push(new HumanMessage(query));
 
@@ -685,27 +717,30 @@ export async function POST(req: Request) {
         let fullAnswer = '';
 
         try {
-          send('init', {});
+          send('init', { sessionKey: key });
 
-          // 调用 runReActChat
-          const result = await runReActChat({
-            messages: inputMessages,
+          const result = await runAgentStream({
+            inputMessages,
+            guardedTools: tools,
+            rawTools,
             systemPrompt,
             llm,
-            tools,
-            rawTools,
+            engine,
             guard,
-            engine: null as any, // chat 不需要持久化
             signal: abortCtrl.signal,
             send,
-            baseUrl,
           });
 
           fullAnswer = result.finalText;
 
-          // 发送 sources
-          if (result.sources.length > 0) {
-            send('sources', result.sources);
+          // 持久化本轮工具结果作为下轮工作上下文
+          if (result.toolResults.length > 0) {
+            try { await saveWorkingContext(session.id, result.toolResults); } catch {}
+          }
+
+          // 发送 sources（从 RAG 检索结果中提取，不在 runAgentStream 中）
+          if (sources.length > 0) {
+            send('sources', sources);
           }
 
           // 引用质量评估
@@ -743,6 +778,7 @@ export async function POST(req: Request) {
           }
         } finally {
           clearTimeout(timeoutId);
+          if (engine && engineInitialized) { try { await engine.release(); } catch {} }
           controller.close();
         }
       },

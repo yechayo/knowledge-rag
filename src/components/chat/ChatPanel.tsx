@@ -170,6 +170,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sessionKeyRef = useRef(`rag:chat:${Date.now()}`);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -203,10 +204,8 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: newMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          message: trimmed,
+          sessionKey: sessionKeyRef.current,
         }),
       });
 
@@ -254,7 +253,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
 
             // 新格式：delta（文本增量）
             if (parsed.type === "delta") {
-              const text = typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data);
+              const text = typeof parsed.data === 'string' ? parsed.data : (parsed.data?.content || "");
               if (text) {
                 accumulatedContent += text;
                 setMessages((prev) => {
@@ -266,7 +265,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
             }
             // 旧格式兼容：answer
             else if (parsed.type === "answer") {
-              const text = typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data);
+              const text = typeof parsed.data === 'string' ? parsed.data : (parsed.data?.content || "");
               if (text) {
                 accumulatedContent += text;
                 setMessages((prev) => {

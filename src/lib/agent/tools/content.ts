@@ -101,7 +101,7 @@ export const listContent = tool(
     schema: z.object({
       category: z.string().optional().describe("内容分类，不传则返回所有分类"),
       status: z.string().optional().describe("状态过滤"),
-      limit: z.number().optional().describe("返回数量，默认 100"),
+      limit: z.coerce.number().optional().describe("返回数量，默认 100"),
     }),
   }
 );

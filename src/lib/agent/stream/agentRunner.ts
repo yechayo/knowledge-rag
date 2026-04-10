@@ -116,7 +116,8 @@ async function runWithValuesMode(
 
   let finalAssistantText = "";
   let totalToolCalls = 0;
-  let processedMsgCount = 0;
+  // 跳过 inputMessages 中的历史消息，只处理 agent 新生成的消息
+  let processedMsgCount = inputMessages.length;
   const toolResults: ToolResultEntry[] = [];
 
   for await (const event of agentStream) {
@@ -136,7 +137,7 @@ async function runWithValuesMode(
         guard.incrementTurn();
         const stopCheck = guard.shouldStop();
         if (stopCheck.stop) {
-          send("delta", { content: `\n\n[${stopCheck.reason}]` });
+          // 不将内部守卫 reason 发送给前端，仅终止循环
           break;
         }
 
@@ -285,7 +286,7 @@ async function runWithMessagesMode(
         guard.incrementTurn();
         const stopCheck = guard.shouldStop();
         if (stopCheck.stop) {
-          send("delta", { content: `\n\n[${stopCheck.reason}]` });
+          // 不将内部守卫 reason 发送给前端，仅终止循环
           break;
         }
 
