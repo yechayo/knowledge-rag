@@ -156,8 +156,61 @@ export class CustomChatModel extends BaseChatModel {
   }
 
   private async anthropicGenerate(messages: any[], signal?: AbortSignal): Promise<any> {
-    const body: any = { model: this.modelName, messages: messages.filter((m: any) => m.role !== "system"), max_tokens: this.maxTokens, temperature: this.temperature };
     const sys = messages.find((m: any) => m.role === "system");
+    const nonSystemMessages = messages.filter((m: any) => m.role !== "system");
+
+    // MiniMax 的 Anthropic 兼容 API 可能不支持 tool calling，单独处理
+    if (this.modelName.includes("MiniMax")) {
+      const body: any = {
+        model: this.modelName,
+        messages: nonSystemMessages,
+        max_tokens: this.maxTokens,
+        temperature: this.temperature,
+      };
+      // 尝试添加 tools 看是否支持
+      if (this.boundTools.length > 0) {
+        body.tools = this.boundTools.map((t: any) => ({
+          name: t.function.name,
+          description: t.function.description,
+          input_schema: t.function.parameters
+        }));
+      }
+
+      const res = await retryWithBackoff(() => fetch(`${this.baseURL}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.apiKey}`,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify(body),
+        signal,
+      }), { maxRetries: 3, signal });
+
+      if (!res.ok) throw new Error(`MiniMax API 错误 ${res.status}: ${await res.text()}`);
+
+      const data = await res.json() as any;
+      console.log("[MiniMax] response:", JSON.stringify(data).slice(0, 500));
+
+      const content = data.content || [];
+      const textBlock = content.find((c: any) => c.type === "text");
+      const toolUseBlocks = content.filter((c: any) => c.type === "tool_use");
+      const text = textBlock?.text || "";
+
+      const aiMsg = new AIMessage({ content: text }) as any;
+      if (toolUseBlocks.length > 0) {
+        aiMsg.tool_calls = toolUseBlocks.map((tu: any) => ({
+          id: tu.id,
+          name: tu.name,
+          args: tu.input || {}
+        }));
+        console.log("[MiniMax] tool_calls detected:", aiMsg.tool_calls);
+      }
+      return { generations: [{ text, message: aiMsg }], llmOutput: {} };
+    }
+
+    const body: any = { model: this.modelName, messages: nonSystemMessages, max_tokens: this.maxTokens, temperature: this.temperature };
     if (sys) body.system = sys.content;
     if (this.boundTools.length > 0) body.tools = this.boundTools.map((t) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters }));
 
