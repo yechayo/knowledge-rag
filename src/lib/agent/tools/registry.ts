@@ -90,6 +90,29 @@ function wrapToolsWithGuard(tools: unknown[], guard: LoopGuard, limits: Resource
 }
 
 /**
+ * 创建只读工具注册表（用于 chat/v2）
+ * 只包含查询类工具，不包含写操作工具
+ */
+export function createReadOnlyToolRegistry(config: ToolRegistryConfig): ToolRegistryResult {
+  const { userId, guard, limits } = config;
+
+  // 只读工具集：搜索、检索、查询
+  const readOnlyTools = [
+    duckduckgoSearch,
+    fetchUrl,
+    listContent,
+    listCategories,
+  ];
+
+  const guardedTools = wrapToolsWithGuard(readOnlyTools, guard, limits);
+
+  return {
+    tools: guardedTools,
+    rawTools: readOnlyTools,
+  };
+}
+
+/**
  * 创建工具注册表 — 组装所有工具并包装 Guard
  */
 export function createToolRegistry(config: ToolRegistryConfig): ToolRegistryResult {
