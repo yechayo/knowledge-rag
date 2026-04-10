@@ -153,12 +153,17 @@ async function runWithValuesMode(
           }
         }
 
-        // 文本内容
-        const textContent = typeof aiMsg.content === "string"
-          ? aiMsg.content
-          : Array.isArray(aiMsg.content)
-            ? aiMsg.content.filter((c: any) => typeof c === "string").join("")
-            : "";
+        // 文本内容 - 支持数组格式 [{type:"text", text:"..."}]
+        let textContent = "";
+        if (typeof aiMsg.content === "string") {
+          textContent = aiMsg.content;
+        } else if (Array.isArray(aiMsg.content)) {
+          // 支持 [{type:"text", text:"..."}] 格式
+          textContent = aiMsg.content
+            .filter((c: any) => c.type === "text" && typeof c.text === "string")
+            .map((c: any) => c.text)
+            .join("");
+        }
 
         if (textContent && !aiMsg.tool_calls?.length) {
           const textToolCall = detectTextToolCall(textContent, rawTools);

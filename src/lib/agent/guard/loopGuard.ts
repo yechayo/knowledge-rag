@@ -26,9 +26,9 @@ export interface LoopGuardConfig {
 }
 
 const DEFAULT_CONFIG: LoopGuardConfig = {
-  maxConsecutiveSame: 1,
-  maxPerTool: 5,
-  maxTotalCalls: 12,
+  maxConsecutiveSame: 3,
+  maxPerTool: 10,
+  maxTotalCalls: 20,
   maxTurns: 15,
   tokenBudget: 100_000,
   diminishingReturnsThreshold: 3,
