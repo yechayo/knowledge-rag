@@ -96,10 +96,8 @@ function wrapToolsWithGuard(tools: unknown[], guard: LoopGuard, limits: Resource
 export function createReadOnlyToolRegistry(config: ToolRegistryConfig): ToolRegistryResult {
   const { userId, guard, limits } = config;
 
-  // 只读工具集：搜索、检索、查询
+  // 只读工具集：仅内容查询，不含网络搜索
   const readOnlyTools = [
-    duckduckgoSearch,
-    fetchUrl,
     listContent,
     listCategories,
   ];
