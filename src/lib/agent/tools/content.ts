@@ -93,7 +93,13 @@ export const listContent = tool(
       take: limit,
     });
 
-    return JSON.stringify(contents);
+    // 为每条内容添加 link 字段，方便模型生成引用标记
+    const result = contents.map((c) => ({
+      ...c,
+      link: `/${c.category}/${c.slug}`,
+    }));
+
+    return JSON.stringify(result);
   },
   {
     name: "list_content",
