@@ -332,9 +332,28 @@ export function createAgentModel(options?: AgentModelOptions, runtimeConfig?: Ag
     if (!baseURL) throw new Error("缺少 API Base URL（请在模型设置中配置）");
     return new CustomChatModel({ modelName, apiKey, baseURL, temperature: options?.temperature ?? runtimeConfig?.temperature ?? parseFloat(process.env.AGENT_TEMPERATURE ?? "0.7"), maxTokens: options?.maxTokens ?? runtimeConfig?.maxTokens ?? parseInt(process.env.AGENT_MAX_TOKENS ?? "4000", 10) });
   }
-  return createGLM5({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 4000 });
+  // 默认使用 MiniMax
+  return createMiniMax({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 4000 });
 }
 
+/**
+ * 创建 MiniMax 模型（默认模型）
+ */
+export function createMiniMax(config?: { temperature?: number; maxTokens?: number }): BaseChatModel {
+  const apiKey = process.env.MINIMAX_API_KEY;
+  if (!apiKey) throw new Error("缺少环境变量 MINIMAX_API_KEY");
+  return new CustomChatModel({
+    modelName: "MiniMax-M2.7-highspeed",
+    apiKey,
+    baseURL: "https://api.minimaxi.com/anthropic",
+    temperature: config?.temperature ?? 0.7,
+    maxTokens: config?.maxTokens ?? 4000,
+  });
+}
+
+/**
+ * 创建 GLM5 模型（备选）
+ */
 export function createGLM5(config?: { temperature?: number; maxTokens?: number }): BaseChatModel {
   const apiKey = process.env.BIGMODEL_API_KEY;
   if (!apiKey) throw new Error("缺少环境变量 BIGMODEL_API_KEY");
