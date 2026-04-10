@@ -254,21 +254,27 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
 
             // 新格式：delta（文本增量）
             if (parsed.type === "delta") {
-              accumulatedContent += parsed.data;
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
-                return updated;
-              });
+              const text = typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data);
+              if (text) {
+                accumulatedContent += text;
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
+                  return updated;
+                });
+              }
             }
             // 旧格式兼容：answer
             else if (parsed.type === "answer") {
-              accumulatedContent += parsed.data;
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
-                return updated;
-              });
+              const text = typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data);
+              if (text) {
+                accumulatedContent += text;
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
+                  return updated;
+                });
+              }
             } else if (parsed.type === "sources") {
               setMessages((prev) => {
                 const updated = [...prev];

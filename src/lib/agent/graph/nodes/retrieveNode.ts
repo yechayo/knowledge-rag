@@ -32,7 +32,17 @@ export async function retrieveNode(
   }
 
   try {
-    const response = await fetch(`${config.baseUrl}/api/retrieve`, {
+    // baseUrl 可能是完整 URL（如 http://example.com/api/retrieve）或相对路径（如 /api/retrieve）
+    let retrieveUrl = config.baseUrl;
+    if (retrieveUrl.endsWith('/api/retrieve')) {
+      retrieveUrl = retrieveUrl + '/retrieve';
+    } else if (retrieveUrl.endsWith('/retrieve')) {
+      // 已经是正确格式
+    } else if (!retrieveUrl.includes('/retrieve')) {
+      retrieveUrl = retrieveUrl + '/api/retrieve';
+    }
+
+    const response = await fetch(retrieveUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, grouped: true, topK: 10 }),
