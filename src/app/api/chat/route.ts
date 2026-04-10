@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { generateHeadingAnchor } from '@/lib/heading-anchor';
 import { evaluateCitationQuality, getQualitySummary } from '@/lib/citation-evaluator';
 import { prisma } from '@/lib/prisma';
+import { runReActChat } from '@/lib/agent/graph';
+import { createReadOnlyToolRegistry } from '@/lib/agent/tools/registry';
+import { createSSESender, SSE_HEADERS } from '@/lib/agent/stream/sse';
+import { LoopGuard, DEFAULT_RESOURCE_LIMITS } from '@/lib/agent/guard';
+import { createAgentModel } from '@/lib/langchain/llm';
+import { HumanMessage, AIMessage, trimMessages, BaseMessage } from '@langchain/core/messages';
+import { REACT_CHAT_PROMPT, REACT_CHAT_NO_CONTENT_PROMPT } from '@/lib/agent/prompts/react_chat';
 
 /**
  * 用于接收 grouped 模式检索结果的单条 chunk 类型
@@ -96,126 +103,25 @@ function buildContentBodySection(chunks: GroupedChunk[]): string {
 }
 
 /**
- * 从分组结果中提取去重后的引用来源
- * 优先使用 content_body chunks，回退到 content_meta
+ * 构建知识库上下文文本（用于注入 systemPrompt）
  */
-function extractSources(grouped: GroupedResult): SourceCitation[] {
-  const seen = new Map<string, SourceCitation>();
-
-  // 优先从 content_body 提取来源
-  for (const chunk of grouped.content_body) {
-    const key = chunk.slug + '::' + (chunk.headingAnchor || '');
-    if (!seen.has(key)) {
-      seen.set(key, {
-        title: chunk.title,
-        slug: chunk.slug,
-        category: chunk.category,
-        headingAnchor: chunk.headingText
-          ? generateHeadingAnchor(chunk.headingText)
-          : chunk.headingAnchor,
-        headingText: chunk.headingText,
-        sectionPath: chunk.sectionPath,
-        contentPreview: chunk.content.length > 100 ? chunk.content.slice(0, 100) + '...' : chunk.content,
-      });
-    }
-  }
-
-  // 回退从 content_meta 补充（仅补充 content_body 中未出现过的 slug）
-  const existingSlugs = new Set(grouped.content_body.map((c) => c.slug));
-  for (const chunk of grouped.content_meta) {
-    if (!existingSlugs.has(chunk.slug)) {
-      seen.set(chunk.slug, {
-        title: chunk.title,
-        slug: chunk.slug,
-        category: chunk.category,
-        headingAnchor: null,
-        headingText: null,
-        sectionPath: null,
-        contentPreview: chunk.content.length > 100 ? chunk.content.slice(0, 100) + '...' : chunk.content,
-      });
-    }
-  }
-
-  return Array.from(seen.values());
+function buildKnowledgeBaseContext(grouped: GroupedResult): string {
+  return `## 网站结构\n${buildNavSection(grouped.nav_structure)}\n\n` +
+    `## 相关内容概览\n${buildContentMetaSection(grouped.content_meta)}\n\n` +
+    `## 相关目录\n${buildTocSection(grouped.toc_entry)}\n\n` +
+    `## 详细内容\n${buildContentBodySection(grouped.content_body)}`;
 }
 
 /**
- * 获取无内容时的固定回复
+ * 自定义 token 计数器
  */
-const NO_CONTENT_REPLY = '你是知识库问答助手。当前知识库中没有找到与用户问题相关的内容。\n\n你必须原话回复："知识库中暂未收录此内容，建议浏览网站寻找相关文章。"\n\n严禁使用你自身的任何知识来回答问题。';
-
-/**
- * 获取有内容时的系统提示词
- */
-function buildSystemPrompt(grouped: GroupedResult): string {
-  const prompt = '[角色设定]\n' +
-'你是一个知识库问答助手。你的全部知识来源于下方提供的知识库内容。\n\n' +
-'[核心原则]\n' +
-'- 你的知识来源只有下方"知识库内容"，严禁使用自身的预训练知识来回答\n' +
-'- 但你可以对知识库中已有的信息进行对比、归纳、总结、推理\n' +
-'- 例如：用户要求对比 React 和 Vue，即使知识库中没有直接写"React和Vue的对比"，只要知识库中有 React 相关内容和 Vue 相关内容，你就应该分别提取这两部分信息进行对比回答\n\n' +
-'[知识库内容]\n' +
-'## 网站结构\n' +
-buildNavSection(grouped.nav_structure) + '\n\n' +
-'## 相关内容概览\n' +
-buildContentMetaSection(grouped.content_meta) + '\n\n' +
-'## 相关目录\n' +
-buildTocSection(grouped.toc_entry) + '\n\n' +
-'## 详细内容\n' +
-buildContentBodySection(grouped.content_body) + '\n\n' +
-'[引用标记规则 - 必须遵守]\n' +
-'你的回答中使用内联省略内容标记来引用知识库，格式为 [[REF:完整链接|缩写内容]]。\n' +
-'- 完整链接直接使用详细内容中给出的"链接"值，例如：[[REF:/article/react-hooks#usestate基础用法|最基础的 Hook]]\n' +
-'- 标记由两部分组成：完整链接（含 /category/slug#anchor）和 |后的缩写内容\n' +
-'- 链接不带引号，直接从"详细内容"的"链接:"后面复制\n' +
-'- 缩写内容用简短几个字概括被引用内容的核心含义，显示在回答中\n' +
-'- 同一来源多次引用使用相同标记（链接相同）\n' +
-'- 禁止在回答末尾额外列出引用来源\n' +
-'- 绝对不使用自身的预训练知识回答问题\n' +
-'- 如果知识库中没有相关内容，原话回复："知识库中暂未收录此内容，建议浏览网站寻找相关文章。"（不包含任何引用标记）\n\n' +
-'[回答前自省 - 你必须按以下步骤思考后再输出最终回答]\n\n' +
-'在输出正式回答之前，请严格完成以下自省检查：\n\n' +
-'1. 检查语料引用是否正确：\n' +
-'   - 我的每一个 [[REF:...|...]] 标记中的链接是否与"详细内容"中给出的"链接"完全一致？\n' +
-'   - 链接格式是否正确：以 / 开头，包含 /category/slug，如需要锚点则加 #锚点\n' +
-'   - 我有没有捏造 slug 或 headingAnchor？\n\n' +
-'2. 检查是否使用了预训练知识：\n' +
-'   - 我的回答中有没有任何信息是来自"知识库内容"之外的？\n' +
-'   - 如果有，请删除那些未经证实的陈述\n\n' +
-'3. 确认引用覆盖度：\n' +
-'   - 用户问题涉及的所有关键信息是否都已被引用标记覆盖？\n' +
-'   - 是否有遗漏的重要知识点没有引用？\n\n' +
-'完成自省后，直接输出最终回答（不要在回答中提及"自省"或任何反思过程）。如果自省发现问题，请先修正后再输出。';
-
-  return prompt;
-}
-
-/**
- * 多轮对话上下文管理
- * 限制历史消息数量，避免 token 浪费
- * @param messages 前端传来的完整对话历史
- * @param maxHistoryRounds 最大保留对话轮数（每轮 = 用户+AI）
- * @returns 精简后的对话历史
- */
-function buildConversationHistory(
-  messages: Array<{ role: string; content: string }>,
-  maxHistoryRounds: number = 3
-): Array<{ role: 'user' | 'assistant'; content: string }> {
-  // 过滤出有效的用户和助手消息
-  const validMessages = messages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
-
-  // 如果消息数量超过限制，只保留最近 N 轮
-  const maxMessages = maxHistoryRounds * 2;
-  if (validMessages.length > maxMessages) {
-    return validMessages.slice(-maxMessages);
-  }
-
-  return validMessages;
+function countTokens(msgs: BaseMessage[]): number {
+  return msgs.reduce((total, msg) => {
+    const text = typeof msg.content === "string" ? msg.content : String(msg.content || "");
+    const cn = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    const en = text.replace(/[\u4e00-\u9fff]/g, " ").split(/\s+/).filter((w: string) => w.length > 0).length;
+    return total + Math.ceil(cn * 2 + en * 1.3) + 4;
+  }, 0);
 }
 
 /**
@@ -607,16 +513,71 @@ function mergeAndDedupeChunks(chunksArray: GroupedChunk[][], limit: number): Gro
 }
 
 /**
- * POST /api/chat - 全局 RAG 聊天接口（公开，SSE 流式输出）
- *
- * 入参:
- * - messages: 对话消息数组 [{role, content}]
- *
- * 出参:
- * - SSE 流 (text/event-stream)
- *   - type: 'answer' -> AI 回答片段
- *   - type: 'sources' -> 引用来源列表（含结构化引用信息）
- *   - type: 'error' -> 错误信息
+ * 从分组结果中提去重后的引用来源
+ */
+function extractSources(grouped: GroupedResult): SourceCitation[] {
+  const seen = new Map<string, SourceCitation>();
+
+  for (const chunk of grouped.content_body) {
+    const key = chunk.slug + '::' + (chunk.headingAnchor || '');
+    if (!seen.has(key)) {
+      seen.set(key, {
+        title: chunk.title,
+        slug: chunk.slug,
+        category: chunk.category,
+        headingAnchor: chunk.headingText
+          ? generateHeadingAnchor(chunk.headingText)
+          : chunk.headingAnchor,
+        headingText: chunk.headingText,
+        sectionPath: chunk.sectionPath,
+        contentPreview: chunk.content.length > 100 ? chunk.content.slice(0, 100) + '...' : chunk.content,
+      });
+    }
+  }
+
+  const existingSlugs = new Set(grouped.content_body.map((c) => c.slug));
+  for (const chunk of grouped.content_meta) {
+    if (!existingSlugs.has(chunk.slug)) {
+      seen.set(chunk.slug, {
+        title: chunk.title,
+        slug: chunk.slug,
+        category: chunk.category,
+        headingAnchor: null,
+        headingText: null,
+        sectionPath: null,
+        contentPreview: chunk.content.length > 100 ? chunk.content.slice(0, 100) + '...' : chunk.content,
+      });
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+/**
+ * 构建多轮对话上下文
+ */
+function buildConversationHistory(
+  messages: Array<{ role: string; content: string }>,
+  maxHistoryRounds: number = 3
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const validMessages = messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+
+  const maxMessages = maxHistoryRounds * 2;
+  if (validMessages.length > maxMessages) {
+    return validMessages.slice(-maxMessages);
+  }
+
+  return validMessages;
+}
+
+/**
+ * POST /api/chat - 全局 RAG 聊天接口（ReAct 架构）
+ * 优先使用知识库，没有则主动搜索互联网
  */
 export async function POST(req: Request) {
   try {
@@ -635,40 +596,27 @@ export async function POST(req: Request) {
     }
 
     const query = lastUserMessage.content;
-
     const apiKey = process.env.BIGMODEL_API_KEY;
+
     if (!apiKey) {
       return new Response(
         'data: ' + JSON.stringify({ type: 'error', data: '服务配置异常：缺少 API Key' }) + '\n\n',
-        { headers: { 'Content-Type': 'text/event-stream' } }
+        { headers: SSE_HEADERS }
       );
     }
 
-    // 检查是否是元问题（关于分类、结构等）
-    const metaGrouped = await checkMetaQuestion(
-      query,
-      new URL('/api/retrieve', req.url).toString()
-    );
+    // RRF 多关键词检索（保留原有逻辑）
+    const baseUrl = new URL('/api/retrieve', req.url).toString();
+    const metaGrouped = await checkMetaQuestion(query, baseUrl);
 
-    // 如果是元问题，直接使用预检结果；否则进行两阶段检索
     let grouped: GroupedResult;
     if (metaGrouped) {
       grouped = metaGrouped;
     } else {
-      // 第一阶段：让 AI 分析问题，生成搜索关键词
       const searchKeywords = await analyzeQueryForSearch(query, apiKey);
-
-      // 第二阶段：使用多个关键词综合检索
-      grouped = await multiQueryRetrieve(
-        new URL('/api/retrieve', req.url).toString(),
-        searchKeywords
-      );
-
-      // 第三阶段：如果关键词中包含分类名，额外查询内容列表
-      const baseUrl = new URL('/api/retrieve', req.url).toString();
+      grouped = await multiQueryRetrieve(baseUrl, searchKeywords);
       const contentList = await fetchContentListByKeywords(baseUrl, searchKeywords);
       if (contentList.length > 0) {
-        // 合并到 content_meta 中（去重）
         const existingIds = new Set(grouped.content_meta.map(c => c.contentId));
         for (const item of contentList) {
           if (!existingIds.has(item.contentId)) {
@@ -678,172 +626,100 @@ export async function POST(req: Request) {
       }
     }
 
-    // 判断是否有相关内容
+    // 构建 sources
+    const sources = extractSources(grouped);
+
+    // 判断是否有相关内容，决定使用哪个提示词
     const hasContent =
       grouped.nav_structure.length > 0 ||
       grouped.content_meta.length > 0 ||
       grouped.toc_entry.length > 0 ||
       grouped.content_body.length > 0;
 
-    const systemPrompt = hasContent ? buildSystemPrompt(grouped) : NO_CONTENT_REPLY;
+    const knowledgeBaseContext = buildKnowledgeBaseContext(grouped);
+    const systemPrompt = hasContent
+      ? REACT_CHAT_PROMPT.replace('{KNOWLEDGE_BASE}', knowledgeBaseContext)
+      : REACT_CHAT_NO_CONTENT_PROMPT;
 
-    // 构建多轮对话上下文（限制最近 3 轮 = 6 条消息）
+    // 构建对话历史
     const conversationHistory = buildConversationHistory(messages.slice(0, -1), 3);
+    const allMessages = conversationHistory.map((h) => {
+      if (h.role === 'assistant') return new AIMessage(h.content);
+      return new HumanMessage(h.content);
+    });
+    allMessages.push(new HumanMessage(query));
 
-    const chatMessages = [
-      { role: 'system' as const, content: systemPrompt },
-      ...conversationHistory,
-      { role: 'user' as const, content: query },
-    ];
+    // 裁剪消息
+    const inputMessages = await trimMessages(allMessages, {
+      maxTokens: 4000,
+      strategy: 'last',
+      includeSystem: true,
+      startOn: 'human',
+      allowPartial: true,
+      tokenCounter: countTokens,
+    });
 
-    // 提取去重后的引用来源
-    const sources = extractSources(grouped);
+    // 创建 Guard 和工具
+    const limits = { ...DEFAULT_RESOURCE_LIMITS };
+    const guard = new LoopGuard({ maxTurns: limits.maxTurns, tokenBudget: limits.tokenBudget });
+    const { tools, rawTools } = createReadOnlyToolRegistry({ userId: 'anonymous', guard, limits });
 
-    // 使用 ReadableStream 进行 SSE 流式响应
+    // 创建 LLM
+    const llm = createAgentModel({ temperature: 0.7, maxTokens: 4000 });
+
+    // AbortController
+    const abortCtrl = new AbortController();
+    const timeoutId = setTimeout(() => abortCtrl.abort(), 5 * 60 * 1000);
+    if (req.signal) {
+      req.signal.addEventListener('abort', () => {
+        clearTimeout(timeoutId);
+        abortCtrl.abort();
+      }, { once: true });
+    }
+
+    // SSE 流式响应
     const stream = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder();
-        const startTime = Date.now();  // 记录请求开始时间
+        const send = createSSESender(controller);
+        const startTime = Date.now();
+        let fullAnswer = '';
 
         try {
-          // 调用智谱 GLM API（流式 + 思考模式）
-          const response = await fetch(
-            'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: 'Bearer ' + apiKey,
-              },
-              body: JSON.stringify({
-                model: 'GLM-4.5-AirX',
-                messages: chatMessages,
-                temperature: 0.5,
-                max_tokens: 4000,
-                stream: true,
-                do_sample: true,
-                // 启用思考模式
-                thinking: {
-                  enable: true,
-                  budget_tokens: 2000,
-                },
-              }),
-            }
-          );
+          send('init', {});
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            controller.enqueue(
-              encoder.encode(
-                'data: ' + JSON.stringify({ type: 'error', data: errorText }) + '\n\n'
-              )
-            );
-            controller.close();
-            return;
+          // 调用 runReActChat
+          const result = await runReActChat({
+            messages: inputMessages,
+            systemPrompt,
+            llm,
+            tools,
+            rawTools,
+            guard,
+            engine: null as any, // chat 不需要持久化
+            signal: abortCtrl.signal,
+            send,
+            baseUrl,
+          });
+
+          fullAnswer = result.finalText;
+
+          // 发送 sources
+          if (result.sources.length > 0) {
+            send('sources', result.sources);
           }
 
-          const reader = response.body?.getReader();
-          if (!reader) {
-            controller.enqueue(
-              encoder.encode(
-                'data: ' + JSON.stringify({ type: 'error', data: 'No response body' }) + '\n\n'
-              )
-            );
-            controller.close();
-            return;
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let fullAnswer = '';  // 收集完整回答用于评估
-          let usageInfo = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };  // Token 用量
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || !trimmed.startsWith('data:')) continue;
-              const data = trimmed.slice(5).trim();
-              if (data === '[DONE]') continue;
-
-              try {
-                const parsed = JSON.parse(data);
-                const choice = parsed.choices?.[0];
-
-                // 提取 token 用量（如果有）
-                if (parsed.usage) {
-                  usageInfo = {
-                    promptTokens: parsed.usage.prompt_tokens || 0,
-                    completionTokens: parsed.usage.completion_tokens || 0,
-                    totalTokens: parsed.usage.total_tokens || 0,
-                  };
-                }
-
-                // 思考内容：暂不发送给前端
-                if (choice?.delta?.reasoning_content) {
-                  // 可选：可将思考内容也发送给前端显示
-                }
-
-                // 正式回答内容
-                const content = choice?.delta?.content;
-                if (content) {
-                  fullAnswer += content;  // 收集完整回答
-                  controller.enqueue(
-                    encoder.encode(
-                      'data: ' + JSON.stringify({ type: 'answer', data: content }) + '\n\n'
-                    )
-                  );
-                }
-              } catch {
-                // 忽略解析错误
-              }
+          // 引用质量评估
+          if (fullAnswer.length > 0 && sources.length > 0) {
+            try {
+              const qualityReport = evaluateCitationQuality(fullAnswer, query, sources);
+              const summary = getQualitySummary(qualityReport);
+              console.log('[引用质量评估]', JSON.stringify({ query: query.slice(0, 50), ...qualityReport, summary }));
+            } catch (evalError) {
+              console.error('[引用质量评估] 评估出错:', evalError);
             }
           }
 
-          // 发送结构化引用来源
-          console.log('[DEBUG] sources.length:', sources.length, 'fullAnswer.length:', fullAnswer.length);
-
-          if (sources.length > 0) {
-            controller.enqueue(
-              encoder.encode(
-                'data: ' + JSON.stringify({
-                  type: 'sources',
-                  data: sources,
-                }) + '\n\n'
-              )
-            );
-
-            // 引用召回率评估（静默进行，不影响用户体验）
-            console.log('[DEBUG] Starting citation evaluation...');
-            console.log('[DEBUG] fullAnswer:', fullAnswer.slice(0, 100));
-            console.log('[DEBUG] sources:', JSON.stringify(sources).slice(0, 200));
-
-            if (fullAnswer.length > 0) {
-              try {
-                const qualityReport = evaluateCitationQuality(fullAnswer, query, sources);
-                const summary = getQualitySummary(qualityReport);
-                console.log('[引用质量评估]', JSON.stringify({
-                  query: query.slice(0, 50),
-                  ...qualityReport,
-                  summary,
-                }));
-              } catch (evalError) {
-                console.error('[引用质量评估] 评估出错:', evalError);
-              }
-            } else {
-              console.log('[引用质量评估] fullAnswer 为空，跳过评估');
-            }
-          } else {
-            console.log('[引用质量评估] sources 为空，跳过评估');
-          }
-
-          // 记录使用日志
+          // 使用日志
           try {
             await prisma.usageLog.create({
               data: {
@@ -851,39 +727,28 @@ export async function POST(req: Request) {
                 answerLength: fullAnswer.length,
                 citations: sources.length,
                 latencyMs: Date.now() - startTime,
-                promptTokens: usageInfo.promptTokens,
-                completionTokens: usageInfo.completionTokens,
-                totalTokens: usageInfo.totalTokens,
               },
             });
-            console.log('[使用日志] 记录成功 - tokens:', usageInfo);
           } catch (logError) {
             console.error('[使用日志] 记录失败:', logError);
           }
 
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
-        } catch (error) {
-          controller.enqueue(
-            encoder.encode(
-              'data: ' + JSON.stringify({
-                type: 'error',
-                data: String(error),
-              }) + '\n\n'
-            )
-          );
+          send('done', {});
+        } catch (err: any) {
+          if (err.name === 'AbortError') {
+            send('done', { reason: 'cancelled' });
+          } else {
+            console.error('[chat] error:', err);
+            send('error', { message: err.message || '模型调用失败' });
+          }
+        } finally {
+          clearTimeout(timeoutId);
           controller.close();
         }
       },
     });
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return new Response(stream, { headers: SSE_HEADERS });
   } catch (error) {
     console.error('Chat failed:', error);
     return NextResponse.json({ error: 'Chat failed' }, { status: 500 });

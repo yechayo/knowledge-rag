@@ -252,7 +252,17 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
           try {
             const parsed = JSON.parse(data);
 
-            if (parsed.type === "answer") {
+            // 新格式：delta（文本增量）
+            if (parsed.type === "delta") {
+              accumulatedContent += parsed.data;
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
+                return updated;
+              });
+            }
+            // 旧格式兼容：answer
+            else if (parsed.type === "answer") {
               accumulatedContent += parsed.data;
               setMessages((prev) => {
                 const updated = [...prev];
