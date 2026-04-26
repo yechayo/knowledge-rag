@@ -24,6 +24,13 @@ interface OpenAIToolDef {
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }
 
+interface LangChainToolCall {
+  id?: string;
+  name: string;
+  args: Record<string, unknown>;
+  type: "tool_call";
+}
+
 export class CustomChatModel extends BaseChatModel {
   modelName: string;
   apiKey: string;
@@ -51,9 +58,9 @@ export class CustomChatModel extends BaseChatModel {
         const properties: Record<string, unknown> = {};
         const required: string[] = [];
         for (const [key, field] of Object.entries(schema.shape)) {
-          const f = field as any;
-          properties[key] = { type: "string", description: f._def?.description || "" };
-          if (f._def?.typeName !== "ZodOptional") required.push(key);
+          const prop = this.zodFieldToProp(field as any);
+          properties[key] = prop;
+          if (this.zodIsRequired(field as any)) required.push(key);
         }
         parameters = { type: "object", properties, required };
       }
@@ -62,26 +69,113 @@ export class CustomChatModel extends BaseChatModel {
     return this;
   }
 
+  /** 将单条 Zod schema 字段转换为 JSON Schema 属性 */
+  private zodFieldToProp(field: any): { type: string; description?: string; enum?: string[] } {
+    // 解包 ZodOptional / ZodDefault 包装
+    let f = field;
+    while (f._def?.typeName === "ZodOptional" || f._def?.typeName === "ZodDefault") {
+      f = f._def.innerType;
+    }
+    const typeName: string = f._def?.typeName || "";
+    const desc: string = (field._def?.description || f._def?.description || "");
+
+    switch (typeName) {
+      case "ZodNumber":
+        return { type: "number", description: desc };
+      case "ZodBoolean":
+        return { type: "boolean", description: desc };
+      case "ZodEnum": {
+        const values: string[] | undefined = f._def?.values;
+        const enumDesc = values?.length
+          ? `${desc} (可选值: ${values.join(", ")})`
+          : desc;
+        return { type: "string", description: enumDesc, enum: values };
+      }
+      case "ZodArray":
+        return { type: "array", description: desc };
+      default:
+        return { type: "string", description: desc };
+    }
+  }
+
+  /** Zod 字段是否必填 */
+  private zodIsRequired(field: any): boolean {
+    return field._def?.typeName !== "ZodOptional" && field._def?.typeName !== "ZodDefault";
+  }
+
   private extractMessages(prompts: BaseMessage[]): any[] {
     const result: any[] = [];
     for (const msg of prompts) {
       if (msg instanceof HumanMessage) {
-        result.push({ role: "user", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+        result.push({ role: "user", type: "user", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
       } else if (msg instanceof AIMessage) {
-        const entry: any = { role: "assistant", content: typeof msg.content === "string" ? msg.content : "" };
+        const entry: any = { role: "assistant", type: "assistant", content: typeof msg.content === "string" ? msg.content : "" };
         const tc = (msg as any).tool_calls || msg.additional_kwargs?.tool_calls;
-        if (tc?.length > 0) entry.tool_calls = tc;
+        if (tc?.length > 0) entry.tool_calls = this.toOpenAIToolCalls(tc);
+        if ((msg as any).additional_kwargs?.reasoning_content) {
+          entry.reasoning_content = (msg as any).additional_kwargs.reasoning_content;
+        }
         result.push(entry);
       } else if (msg instanceof SystemMessage) {
-        result.push({ role: "system", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+        result.push({ role: "system", type: "system", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
       } else if (msg instanceof ToolMessage) {
-        result.push({ role: "tool", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content), tool_call_id: (msg as any).tool_call_id });
+        result.push({ role: "tool", type: "tool", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content), tool_call_id: (msg as any).tool_call_id });
       } else {
         const m = msg as any;
-        result.push({ role: m.lc_serialized?.metadata?.role || m.role || "user", content: typeof m.content === "string" ? m.content : JSON.stringify(m.content) });
+        const role = m.lc_serialized?.metadata?.role || m.role || "user";
+        result.push({ role, type: role, content: typeof m.content === "string" ? m.content : JSON.stringify(m.content) });
       }
     }
     return result;
+  }
+
+  private parseToolCallArgs(toolCall: any): Record<string, unknown> {
+    const args = toolCall.args ?? toolCall.input ?? toolCall.function?.arguments;
+    if (!args) return {};
+    if (typeof args === "string") {
+      try {
+        return JSON.parse(args);
+      } catch {
+        return {};
+      }
+    }
+    return typeof args === "object" ? args : {};
+  }
+
+  private toLangChainToolCall(toolCall: any): LangChainToolCall {
+    return {
+      id: toolCall.id,
+      name: toolCall.name ?? toolCall.function?.name ?? "",
+      args: this.parseToolCallArgs(toolCall),
+      type: "tool_call",
+    };
+  }
+
+  private toOpenAIToolCalls(toolCalls: any[]): any[] {
+    return toolCalls.map((toolCall) => {
+      if (toolCall.type === "function" && toolCall.function) {
+        return {
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.function.name,
+            arguments: typeof toolCall.function.arguments === "string"
+              ? toolCall.function.arguments
+              : JSON.stringify(toolCall.function.arguments ?? {}),
+          },
+        };
+      }
+
+      const normalized = this.toLangChainToolCall(toolCall);
+      return {
+        id: normalized.id || `call_${Date.now()}`,
+        type: "function",
+        function: {
+          name: normalized.name,
+          arguments: JSON.stringify(normalized.args),
+        },
+      };
+    });
   }
 
   /**
@@ -97,7 +191,8 @@ export class CustomChatModel extends BaseChatModel {
         const content: any[] = [];
         if (m.content) content.push({ type: "text", text: m.content });
         for (const tc of m.tool_calls) {
-          content.push({ type: "tool_use", id: tc.id, name: tc.name, input: tc.args || tc.function?.arguments ? (typeof tc.args === "string" ? JSON.parse(tc.args) : tc.args) : {} });
+          const toolCall = this.toLangChainToolCall(tc);
+          content.push({ type: "tool_use", id: toolCall.id, name: toolCall.name, input: toolCall.args });
         }
         result.push({ role: "assistant", content });
       } else if (m.role === "tool") {
@@ -137,7 +232,10 @@ export class CustomChatModel extends BaseChatModel {
     const text = msg?.content || "";
     const rawToolCalls = msg?.tool_calls;
 
-    const aiMsg = new AIMessage({ content: text || "", additional_kwargs: rawToolCalls ? { tool_calls: rawToolCalls } : {} }) as any;
+    const additionalKwargs: any = {};
+    if (rawToolCalls) additionalKwargs.tool_calls = rawToolCalls;
+    if (msg?.reasoning_content) additionalKwargs.reasoning_content = msg.reasoning_content;
+    const aiMsg = new AIMessage({ content: text || "", additional_kwargs: additionalKwargs }) as any;
     if (rawToolCalls?.length > 0) {
       aiMsg.tool_calls = rawToolCalls.map((tc: any) => {
         let args: Record<string, unknown> = {};
@@ -149,7 +247,7 @@ export class CustomChatModel extends BaseChatModel {
             try { args = JSON.parse(fixed); } catch { /* 放弃，保持 {} */ }
           }
         }
-        return { id: tc.id || `call_${Date.now()}`, name: tc.function?.name, args };
+        return { id: tc.id || `call_${Date.now()}`, name: tc.function?.name, args, type: "tool_call" };
       });
     }
     return { generations: [{ text, message: aiMsg }], llmOutput: {} };
@@ -203,7 +301,8 @@ export class CustomChatModel extends BaseChatModel {
         aiMsg.tool_calls = toolUseBlocks.map((tu: any) => ({
           id: tu.id,
           name: tu.name,
-          args: tu.input || {}
+          args: tu.input || {},
+          type: "tool_call"
         }));
         console.log("[MiniMax] tool_calls detected:", aiMsg.tool_calls);
       }
@@ -232,7 +331,7 @@ export class CustomChatModel extends BaseChatModel {
     const aiMsg = new AIMessage({ content: text, additional_kwargs: thinking ? { thinking } : {} }) as any;
     aiMsg.thinking = thinking;
     if (toolUseBlocks.length > 0) {
-      aiMsg.tool_calls = toolUseBlocks.map((tu: any) => ({ id: tu.id, name: tu.name, args: tu.input || {} }));
+      aiMsg.tool_calls = toolUseBlocks.map((tu: any) => ({ id: tu.id, name: tu.name, args: tu.input || {}, type: "tool_call" }));
     }
     return { generations: [{ text, message: aiMsg }], llmOutput: {} };
   }
@@ -275,6 +374,12 @@ export class CustomChatModel extends BaseChatModel {
           const delta = chunk.choices?.[0]?.delta;
           if (!delta) continue;
           if (delta.content) yield new ChatGenerationChunk({ text: delta.content, message: new AIMessageChunk({ content: delta.content }) });
+          if (delta.reasoning_content) {
+            yield new ChatGenerationChunk({
+              text: "",
+              message: new AIMessageChunk({ content: "", additional_kwargs: { thinking: delta.reasoning_content } }),
+            });
+          }
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0;
@@ -307,7 +412,7 @@ export class CustomChatModel extends BaseChatModel {
                       if (end > 0) try { args = JSON.parse(trimmed.substring(0, end + 1)); } catch { /* 放弃 */ }
                     }
                   }
-                  return { id: a.id || `call_${Date.now()}`, name: a.name, args };
+                  return { id: a.id || `call_${Date.now()}`, name: a.name, args, type: "tool_call" };
                 });
                 const aiMsg = new AIMessageChunk({ content: "", additional_kwargs: { tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: JSON.stringify(tc.args) } })) } }) as any;
                 aiMsg.tool_calls = toolCalls;
@@ -361,7 +466,7 @@ export class CustomChatModel extends BaseChatModel {
           } else if (event.type === "content_block_stop" && curToolName) {
             let args = {}; try { args = JSON.parse(curToolArgs || "{}"); } catch {}
             const aiMsg = new AIMessageChunk({ content: "" }) as any;
-            aiMsg.tool_calls = [{ id: curToolId, name: curToolName, args }];
+            aiMsg.tool_calls = [{ id: curToolId, name: curToolName, args, type: "tool_call" }];
             aiMsg.additional_kwargs = { tool_calls: [{ id: curToolId, type: "tool_use", name: curToolName, input: args }] };
             yield new ChatGenerationChunk({ text: "", message: aiMsg });
             curToolName = "";
@@ -383,10 +488,10 @@ export function createAgentModel(options?: AgentModelOptions, runtimeConfig?: Ag
     if (!apiKey) throw new Error("缺少 API Key（请在模型设置中配置）");
     const baseURL = runtimeConfig?.baseURL ?? process.env.AGENT_BASE_URL;
     if (!baseURL) throw new Error("缺少 API Base URL（请在模型设置中配置）");
-    return new CustomChatModel({ modelName, apiKey, baseURL, temperature: options?.temperature ?? runtimeConfig?.temperature ?? parseFloat(process.env.AGENT_TEMPERATURE ?? "0.7"), maxTokens: options?.maxTokens ?? runtimeConfig?.maxTokens ?? parseInt(process.env.AGENT_MAX_TOKENS ?? "4000", 10) });
+    return new CustomChatModel({ modelName, apiKey, baseURL, temperature: options?.temperature ?? runtimeConfig?.temperature ?? parseFloat(process.env.AGENT_TEMPERATURE ?? "0.7"), maxTokens: options?.maxTokens ?? runtimeConfig?.maxTokens ?? parseInt(process.env.AGENT_MAX_TOKENS ?? "8000", 10) });
   }
   // 默认使用 MiniMax
-  return createMiniMax({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 4000 });
+  return createMiniMax({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 8000 });
 }
 
 /**
@@ -400,7 +505,7 @@ export function createMiniMax(config?: { temperature?: number; maxTokens?: numbe
     apiKey,
     baseURL: "https://api.minimaxi.com/anthropic",
     temperature: config?.temperature ?? 0.7,
-    maxTokens: config?.maxTokens ?? 4000,
+    maxTokens: config?.maxTokens ?? 8000,
   });
 }
 
@@ -410,5 +515,5 @@ export function createMiniMax(config?: { temperature?: number; maxTokens?: numbe
 export function createGLM5(config?: { temperature?: number; maxTokens?: number }): BaseChatModel {
   const apiKey = process.env.BIGMODEL_API_KEY;
   if (!apiKey) throw new Error("缺少环境变量 BIGMODEL_API_KEY");
-  return new ChatOpenAI({ model: "glm-4-flash", apiKey, configuration: { baseURL: "https://open.bigmodel.cn/api/paas/v4" }, temperature: config?.temperature ?? 0.7, maxTokens: config?.maxTokens ?? 2000 });
+  return new ChatOpenAI({ model: "glm-4-flash", apiKey, configuration: { baseURL: "https://open.bigmodel.cn/api/paas/v4" }, temperature: config?.temperature ?? 0.7, maxTokens: config?.maxTokens ?? 4096 });
 }

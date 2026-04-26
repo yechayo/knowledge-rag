@@ -116,6 +116,7 @@ async function runWithValuesMode(
 
   let finalAssistantText = "";
   let totalToolCalls = 0;
+  let thinkingRound = 0;
   // 跳过 inputMessages 中的历史消息，只处理 agent 新生成的消息
   let processedMsgCount = inputMessages.length;
   const toolResults: ToolResultEntry[] = [];
@@ -141,9 +142,11 @@ async function runWithValuesMode(
           break;
         }
 
-        // thinking — values 模式下完整 AIMessage 携带 additional_kwargs.thinking
+        // thinking — values 模式下完整 AIMessage 携带 additional_kwargs.thinking 或 reasoning_content
         if (aiMsg.additional_kwargs?.thinking) {
-          send("thinking", { content: aiMsg.additional_kwargs.thinking });
+          send("thinking", { content: aiMsg.additional_kwargs.thinking, round: ++thinkingRound });
+        } else if (aiMsg.additional_kwargs?.reasoning_content) {
+          send("thinking", { content: aiMsg.additional_kwargs.reasoning_content, round: ++thinkingRound });
         }
 
         // 结构化工具调用
@@ -231,6 +234,7 @@ async function runWithMessagesMode(
   let finalAssistantText = "";
   let totalToolCalls = 0;
   let lastToolCallName = "";
+  let thinkingRound = 0;
   const toolResults: ToolResultEntry[] = [];
 
   try {
@@ -277,7 +281,9 @@ async function runWithMessagesMode(
           send("delta", { content: aiChunk.content });
           finalAssistantText += aiChunk.content;
         } else if ((aiChunk as any).additional_kwargs?.thinking) {
-          send("thinking", { content: (aiChunk as any).additional_kwargs.thinking });
+          // 首个 reasoning chunk 标记新轮次
+          if ((aiChunk as any).additional_kwargs._newRound) thinkingRound++;
+          send("thinking", { content: (aiChunk as any).additional_kwargs.thinking, round: thinkingRound || undefined });
         }
 
       } else if (message instanceof AIMessage) {
@@ -292,7 +298,17 @@ async function runWithMessagesMode(
 
         // thinking（来自最终完整消息）
         if ((aiMsg as any).additional_kwargs?.thinking) {
-          send("thinking", { content: (aiMsg as any).additional_kwargs.thinking });
+          send("thinking", { content: (aiMsg as any).additional_kwargs.thinking, round: ++thinkingRound });
+        } else if ((aiMsg as any).additional_kwargs?.reasoning_content) {
+          send("thinking", { content: (aiMsg as any).additional_kwargs.reasoning_content, round: ++thinkingRound });
+        }
+
+        // 兜底：若内容未通过 chunk 流式到达，从最终消息发送
+        const fullContent = typeof aiMsg.content === "string" ? aiMsg.content : "";
+        if (fullContent && fullContent.length > finalAssistantText.length) {
+          const remaining = fullContent.slice(finalAssistantText.length);
+          send("delta", { content: remaining });
+          finalAssistantText = fullContent;
         }
       }
     }

@@ -120,7 +120,7 @@ export async function POST(req: Request) {
   const { tools, rawTools } = createToolRegistry({ userId, guard, limits });
 
   // LLM
-  const llm = createAgentModel({ temperature: 0.7, maxTokens: 4000 }, modelConfig);
+  const llm = createAgentModel({ temperature: 0.7, maxTokens: 8000 }, modelConfig);
 
   // 加载历史 + trimMessages 裁剪（只裁对话历史，工作上下文在 system prompt 中）
   try { await engine.checkAndCompact(skillPrompt); } catch {}

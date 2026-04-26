@@ -13,7 +13,7 @@ interface MessageBubbleProps {
     id: string;
     role: "user" | "assistant";
     content: string;
-    thinking?: string;
+    thinking?: string | string[];
     thinkingComplete?: boolean;
     toolCalls?: ToolCallBlock[];
     isComplete?: boolean;
@@ -26,6 +26,9 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
   const isStreaming = message.role === "assistant" && !message.isComplete;
   const hasError = !!message.error;
   const toolCalls = message.toolCalls || [];
+  const thinkingBlocks: string[] = Array.isArray(message.thinking)
+    ? message.thinking
+    : message.thinking ? [message.thinking] : [];
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -55,17 +58,17 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           ) : (
             <>
-              {/* Thinking content - 思考时自动展开，回答开始后收起 */}
-              {message.thinking && (
-                <details className="mb-2" open={!message.thinkingComplete}>
+              {/* Thinking content - 每轮思考独立显示 */}
+              {thinkingBlocks.length > 0 && thinkingBlocks.map((block, i) => (
+                <details key={i} className="mb-2" open={!message.thinkingComplete}>
                   <summary className="cursor-pointer text-xs text-[var(--text-3)] hover:text-[var(--text-2)] px-1 select-none">
-                    💭 思考过程
+                    💭 思考过程{thinkingBlocks.length > 1 ? ` #${i + 1}` : ""}
                   </summary>
                   <div className="mt-1 px-3 py-2 rounded-xl rounded-bl-md bg-[var(--accent)]/5 border border-[var(--accent)]/20 text-xs text-[var(--text-2)] leading-relaxed whitespace-pre-wrap font-mono">
-                    {message.thinking}
+                    {block}
                   </div>
                 </details>
-              )}
+              ))}
 
               {/* Text content */}
               <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-[var(--card)] border border-[var(--border)] text-[var(--text-1)] text-sm leading-relaxed">

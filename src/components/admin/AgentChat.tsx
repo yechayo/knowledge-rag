@@ -17,7 +17,8 @@ export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  thinking?: string;
+  /** 思考内容数组，每轮一次思考 */
+  thinking?: string[];
   thinkingComplete?: boolean;
   toolCalls: ToolCallBlock[];
   isComplete: boolean;
@@ -145,7 +146,7 @@ export default function AgentChat() {
       id: assistantId,
       role: "assistant",
       content: "",
-      thinking: "",
+      thinking: [],
       thinkingComplete: false,
       toolCalls: [],
       isComplete: false,
@@ -237,13 +238,21 @@ export default function AgentChat() {
             } else if (data.type === "thinking") {
               const content = data.data?.content || "";
               if (!content) continue;
-              // 直接追加到 thinking
+              const round = data.data?.round as number | undefined;
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, thinking: (m.thinking || "") + content }
-                    : m
-                )
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  const blocks = [...(m.thinking || [])];
+                  // round 是新轮次则 push 新块，否则追加到最后一块
+                  if (round !== undefined && round > blocks.length) {
+                    blocks.push(content);
+                  } else if (blocks.length > 0) {
+                    blocks[blocks.length - 1] += content;
+                  } else {
+                    blocks.push(content);
+                  }
+                  return { ...m, thinking: blocks };
+                })
               );
             } else if (data.type === "tool_start") {
               const toolBlock: ToolCallBlock = {
