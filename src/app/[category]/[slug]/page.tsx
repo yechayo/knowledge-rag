@@ -36,6 +36,8 @@ interface AdjacentArticle {
   category: string;
 }
 
+type ContentListItem = Pick<ContentData, "slug" | "title" | "category" | "status" | "createdAt">;
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString("zh-CN", {
@@ -226,11 +228,11 @@ export default function DetailPage() {
       const res = await fetch(`/api/content?category=${currentCategory}&limit=100`);
       if (!res.ok) return;
       const data = await res.json();
-      const items = (data.items || [])
-        .filter((item: any) => item.status === "published")
-        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const items = ((data.items || []) as ContentListItem[])
+        .filter((item) => item.status === "published")
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-      const currentIndex = items.findIndex((item: any) => item.createdAt === currentCreatedAt);
+      const currentIndex = items.findIndex((item) => item.createdAt === currentCreatedAt);
       if (currentIndex > 0) setPrevArticle(items[currentIndex - 1]);
       if (currentIndex < items.length - 1) setNextArticle(items[currentIndex + 1]);
     } catch {
@@ -256,45 +258,65 @@ export default function DetailPage() {
     setEditBody(newBody);
   }, []);
 
-  const handleSave = async () => {
-    if (!content) return;
+  const saveContent = async (reindexAfterSave: boolean): Promise<boolean> => {
+    if (!content) return false;
     setSaving(true);
     setSaveMsg(null);
     try {
+      const titleChanged = editTitle !== content.title;
+      const bodyChanged = editBody !== content.body;
+      const categoryChanged = editCategory !== content.category;
+
       const res = await fetch(`/api/content/${content.id}/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: editTitle, body: editBody, category: editCategory }),
       });
       if (!res.ok) throw new Error("保存失败");
-      const updatedContent = { ...content, title: editTitle, body: editBody, category: editCategory };
-      setContent(updatedContent);
+      const updatedContent = await res.json();
 
-      // 分类变更时重新向量化索引
-      if (editCategory !== content.category) {
-        await fetch(`/api/content/${content.id}/publish`, { method: "POST" });
+      const shouldReindex =
+        reindexAfterSave &&
+        (categoryChanged || (content.status === "published" && (titleChanged || bodyChanged)));
+
+      if (shouldReindex) {
+        const publishRes = await fetch(`/api/content/${content.id}/publish`, { method: "POST" });
+        if (!publishRes.ok) throw new Error("重新索引失败");
+        const publishData = await publishRes.json();
+        setContent(publishData.content ?? { ...updatedContent, status: "published" });
         setSaveMsg("已保存并重新索引");
-        router.replace(`/${editCategory}/${slug}`, { scroll: false });
+        if (categoryChanged) {
+          router.replace(`/${editCategory}/${slug}`, { scroll: false });
+        }
       } else {
+        setContent(updatedContent);
         setSaveMsg("已保存");
       }
+      return true;
     } catch {
       setSaveMsg("保存失败");
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    await saveContent(true);
   };
 
   const handlePublish = async () => {
     if (!content) return;
     setPublishing(true);
     try {
-      await handleSave();
+      const saved = await saveContent(false);
+      if (!saved) return;
       const res = await fetch(`/api/content/${content.id}/publish`, { method: "POST" });
       if (!res.ok) throw new Error("发布失败");
+      const publishData = await res.json();
       setSaveMsg("已发布并索引");
       setIsEditing(false);
-      setContent({ ...content, body: editBody, category: editCategory, status: "published" });
+      setContent(publishData.content ?? { ...content, title: editTitle, body: editBody, category: editCategory, status: "published" });
       // 分类变更后跳转到新 URL
       if (editCategory !== content.category) {
         router.replace(`/${editCategory}/${slug}`, { scroll: false });

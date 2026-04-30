@@ -1,6 +1,6 @@
 /**
- * MCP API Key 认证模块
- * 用于校验 MCP 客户端请求的 Authorization 头
+ * MCP API Key 认证
+ * 校验 MCP 客户端请求的 Authorization: Bearer <key> 头
  */
 
 export class McpAuthError extends Error {
@@ -10,10 +10,6 @@ export class McpAuthError extends Error {
   }
 }
 
-/**
- * 从请求中提取并校验 API Key
- * 支持 Bearer token 格式: Authorization: Bearer <key>
- */
 export function validateMcpRequest(request: Request): void {
   const authHeader = request.headers.get('authorization');
   if (!authHeader) {
@@ -22,7 +18,7 @@ export function validateMcpRequest(request: Request): void {
 
   const expectedKey = process.env.MCP_API_KEY;
   if (!expectedKey) {
-    throw new McpAuthError('服务端未配置 MCP_API_KEY 环境变量');
+    throw new McpAuthError('服务端未配置 MCP_API_KEY');
   }
 
   const token = authHeader.startsWith('Bearer ')

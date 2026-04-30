@@ -1,5 +1,5 @@
 import { createAgentModel } from "@/lib/langchain/llm";
-import { duckduckgoSearch, createContent, listContent, deleteContent } from "./tools";
+import { duckduckgoSearch, createContent, listContent, updateContent, deleteContent } from "./tools";
 import { getSystemPrompt, NEWS_AGENT_PROMPT } from "./prompts/react_agent";
 import { createAgentExecutor, createReactAgent } from "@langchain/langgraph/prebuilt";
 
@@ -38,7 +38,7 @@ async function createAgentExecutorCore(
  * 创建新闻 Agent 执行器
  */
 export async function createNewsAgentExecutor() {
-  const tools: any[] = [duckduckgoSearch, createContent, listContent, deleteContent];
+  const tools: any[] = [duckduckgoSearch, createContent, listContent, updateContent, deleteContent];
   return createAgentExecutorCore(tools, NEWS_AGENT_PROMPT);
 }
 

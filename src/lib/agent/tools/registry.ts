@@ -6,7 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
-  duckduckgoSearch, fetchUrl, createContent, listContent, listCategories, deleteContent,
+  duckduckgoSearch, fetchUrl, createContent, listContent, listCategories, updateContent, deleteContent,
   searchSkill, requestInstallSkill, listInstalledSkills, uninstallSkill, checkSkillStatus,
 } from "@/lib/agent/tools";
 import { LoopGuard, LoopGuardError, truncateToolResult } from "@/lib/agent/guard";
@@ -117,7 +117,7 @@ export function createToolRegistry(config: ToolRegistryConfig): ToolRegistryResu
   const { userId, guard, limits } = config;
 
   const remember = createRememberTool(userId);
-  const baseTools = [duckduckgoSearch, fetchUrl, createContent, listContent, listCategories, deleteContent];
+  const baseTools = [duckduckgoSearch, fetchUrl, createContent, listContent, listCategories, updateContent, deleteContent];
   const skillMarketTools = [searchSkill, requestInstallSkill, listInstalledSkills, uninstallSkill, checkSkillStatus];
   const allTools = [...baseTools, remember, ...skillMarketTools];
 

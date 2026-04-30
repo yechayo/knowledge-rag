@@ -38,6 +38,13 @@ interface FormattedResult {
   sourceTags?: string[];
 }
 
+const GROUPED_LIMITS: Record<string, number> = {
+  nav_structure: 2,
+  content_meta: 5,
+  toc_entry: 5,
+  content_body: 8,
+};
+
 /**
  * 将数据库行格式化为统一的 result 对象
  */
@@ -92,9 +99,53 @@ export async function POST(req: Request) {
     const queryEmbedding = await generateEmbedding(query);
     const embeddingStr = vectorToPostgresFormat(queryEmbedding);
 
+    if (grouped) {
+      const groups: Record<string, FormattedResult[]> = {
+        nav_structure: [],
+        content_meta: [],
+        toc_entry: [],
+        content_body: [],
+      };
+
+      await Promise.all(
+        Object.entries(GROUPED_LIMITS).map(async ([chunkType, limit]) => {
+          const rows = await prisma.$queryRaw<ChunkResult[]>`
+            SELECT
+              c.id,
+              c."contentId",
+              co.title,
+              co.slug,
+              co.category,
+              c.content,
+              1 - (c.embedding <=> ${embeddingStr}::vector(256)) AS score,
+              c."chunkType",
+              c."headingLevel",
+              c."headingAnchor",
+              c."headingText",
+              c."sectionPath",
+              c."sourceTitle",
+              c."sourceSlug",
+              c."sourceCategory",
+              c."sourceTags"
+            FROM "Chunk" c
+            JOIN "Content" co ON c."contentId" = co.id
+            WHERE co.status = 'published'
+              AND c.embedding IS NOT NULL
+              AND c."chunkType" = ${chunkType}
+            ORDER BY c.embedding <=> ${embeddingStr}::vector(256) ASC
+            LIMIT ${limit}
+          `;
+
+          groups[chunkType] = rows.map(formatResult);
+        })
+      );
+
+      return NextResponse.json({ grouped: groups });
+    }
+
     // 搜索所有已发布内容的 chunks
-    // 分组模式始终取 top-20，标准模式使用用户指定的 topK
-    const limit = grouped ? 20 : validTopK;
+    // 标准模式使用用户指定的 topK
+    const limit = validTopK;
 
     const results = await prisma.$queryRaw<ChunkResult[]>`
       SELECT
@@ -121,33 +172,6 @@ export async function POST(req: Request) {
       ORDER BY c.embedding <=> ${embeddingStr}::vector(256) ASC
       LIMIT ${limit}
     `;
-
-    if (grouped) {
-      // 按 chunkType 分组
-      const groups: Record<string, FormattedResult[]> = {
-        nav_structure: [],
-        content_meta: [],
-        toc_entry: [],
-        content_body: [],
-      };
-
-      // 每个 chunkType 的数量上限
-      const limits: Record<string, number> = {
-        nav_structure: 2,
-        content_meta: 5,
-        toc_entry: 5,
-        content_body: 8,
-      };
-
-      for (const r of results) {
-        const type = r.chunkType;
-        if (type in groups && groups[type].length < limits[type]) {
-          groups[type].push(formatResult(r));
-        }
-      }
-
-      return NextResponse.json({ grouped: groups });
-    }
 
     // 标准模式：直接返回格式化后的结果
     return NextResponse.json({

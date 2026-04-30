@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createUniqueHeadingAnchorGenerator } from "@/lib/heading-anchor";
 
 interface TocItem {
   id: string;
@@ -19,16 +20,14 @@ export default function TocWidget({ body }: TocWidgetProps) {
   const headings = useMemo<TocItem[]>(() => {
     // 从 Markdown 原文解析标题
     const regex = /^(#{2,3})\s+(.+)$/gm;
+    const nextHeadingAnchor = createUniqueHeadingAnchorGenerator();
     const items: TocItem[] = [];
     let match;
     while ((match = regex.exec(body)) !== null) {
       const level = match[1].length; // 2 = h2, 3 = h3
       const text = match[2].trim();
-      // 生成 id：去除特殊字符，用连字符连接
-      const id = text
-        .toLowerCase()
-        .replace(/[^\w\u4e00-\u9fff\s-]/g, "")
-        .replace(/\s+/g, "-");
+      const id = nextHeadingAnchor(text);
+      if (!id) continue;
       items.push({ id, text, level });
     }
     return items;
@@ -55,7 +54,7 @@ export default function TocWidget({ body }: TocWidgetProps) {
     if (headings.length === 0) return;
 
     // 初始化时设置一次
-    updateActive();
+    const initialFrame = requestAnimationFrame(updateActive);
 
     const onScroll = () => {
       if (!tickingRef.current) {
@@ -68,7 +67,10 @@ export default function TocWidget({ body }: TocWidgetProps) {
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      cancelAnimationFrame(initialFrame);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, [headings, updateActive]);
 
   if (headings.length === 0) return null;

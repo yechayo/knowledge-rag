@@ -1,5 +1,7 @@
 import { tool } from "@langchain/core/tools";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { indexContent } from "@/lib/content-indexer";
 import { prisma } from "@/lib/prisma";
 
 export const createContent = tool(
@@ -45,7 +47,16 @@ export const createContent = tool(
       },
     });
 
-    return content;
+    if (content.status !== "published") {
+      return content;
+    }
+
+    const indexStats = await indexContent(content);
+    return {
+      ...content,
+      indexed: true,
+      indexStats,
+    };
   },
   {
     name: "create_content",
@@ -70,7 +81,7 @@ export const listContent = tool(
     status?: string;
     limit?: number;
   }) => {
-    const where: any = {};
+    const where: { category?: string; status?: string } = {};
     // 只有当 category 有值时才添加 category 过滤
     if (category && category.trim() !== "") {
       where.category = category;
@@ -163,7 +174,7 @@ export const updateContent = tool(
     body?: string;
     category?: string;
     slug?: string;
-    metadata?: Record<string, any>;
+    metadata?: Prisma.InputJsonValue;
     status?: string;
   }) => {
     const existing = await prisma.content.findUnique({ where: { id } });
@@ -171,7 +182,14 @@ export const updateContent = tool(
       return { error: "内容不存在", id };
     }
 
-    const updateData: any = {};
+    const updateData: {
+      title?: string;
+      body?: string;
+      category?: string;
+      status?: string;
+      metadata?: Prisma.InputJsonValue;
+      slug?: string;
+    } = {};
     if (title !== undefined) updateData.title = title;
     if (body !== undefined) updateData.body = body;
     if (category !== undefined) updateData.category = category;
@@ -187,23 +205,54 @@ export const updateContent = tool(
       updateData.slug = slug;
     }
 
+    if (Object.keys(updateData).length === 0) {
+      return { error: "No fields to update", id };
+    }
+
     const updated = await prisma.content.update({
       where: { id },
       data: updateData,
     });
 
-    return updated;
+    if (existing.status === "published" && updated.status !== "published") {
+      await prisma.$transaction(async (tx) => {
+        await tx.chunk.deleteMany({ where: { contentId: id } });
+      });
+      return {
+        ...updated,
+        indexCleared: true,
+      };
+    }
+
+    const changesAffectIndex =
+      title !== undefined ||
+      body !== undefined ||
+      category !== undefined ||
+      slug !== undefined ||
+      metadata !== undefined ||
+      status === "published";
+
+    if (updated.status !== "published" || !changesAffectIndex) {
+      return updated;
+    }
+
+    const indexStats = await indexContent(updated);
+    return {
+      ...updated,
+      indexed: true,
+      indexStats,
+    };
   },
   {
     name: "update_content",
-    description: "更新已有内容。仅更新传入的字段，未传入的字段保持不变。",
+    description: "更新已有内容。仅更新传入的字段，未传入的字段保持不变。已发布内容更新后会自动重建知识库 embedding；改为草稿会清理旧向量块。",
     schema: z.object({
       id: z.string().describe("要更新的内容 ID"),
       title: z.string().optional().describe("新标题"),
       body: z.string().optional().describe("新正文（Markdown）"),
       category: z.string().optional().describe("新分类"),
       slug: z.string().optional().describe("新 URL slug"),
-      metadata: z.record(z.string(), z.any()).optional().describe("新元数据"),
+      metadata: z.record(z.string(), z.unknown()).optional().describe("新元数据"),
       status: z.string().optional().describe("新状态：draft 或 published"),
     }),
   }
@@ -386,7 +435,7 @@ ${context}
 export const suggestContentIdeas = tool(
   async ({ category }: { category?: string }) => {
     // 获取该分类下已有的标题作为参考
-    const where: any = {};
+    const where: { category?: string } = {};
     if (category) where.category = category;
 
     const existingTitles = await prisma.content.findMany({

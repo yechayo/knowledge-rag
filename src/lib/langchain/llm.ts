@@ -490,8 +490,8 @@ export function createAgentModel(options?: AgentModelOptions, runtimeConfig?: Ag
     if (!baseURL) throw new Error("缺少 API Base URL（请在模型设置中配置）");
     return new CustomChatModel({ modelName, apiKey, baseURL, temperature: options?.temperature ?? runtimeConfig?.temperature ?? parseFloat(process.env.AGENT_TEMPERATURE ?? "0.7"), maxTokens: options?.maxTokens ?? runtimeConfig?.maxTokens ?? parseInt(process.env.AGENT_MAX_TOKENS ?? "8000", 10) });
   }
-  // 默认使用 MiniMax
-  return createMiniMax({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 8000 });
+  // 默认使用 GLM
+  return createGLM5({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 4096 });
 }
 
 /**
@@ -515,5 +515,5 @@ export function createMiniMax(config?: { temperature?: number; maxTokens?: numbe
 export function createGLM5(config?: { temperature?: number; maxTokens?: number }): BaseChatModel {
   const apiKey = process.env.BIGMODEL_API_KEY;
   if (!apiKey) throw new Error("缺少环境变量 BIGMODEL_API_KEY");
-  return new ChatOpenAI({ model: "glm-4-flash", apiKey, configuration: { baseURL: "https://open.bigmodel.cn/api/paas/v4" }, temperature: config?.temperature ?? 0.7, maxTokens: config?.maxTokens ?? 4096 });
+  return new ChatOpenAI({ model: "glm-4.7-flash", apiKey, configuration: { baseURL: "https://open.bigmodel.cn/api/paas/v4" }, temperature: config?.temperature ?? 0.7, maxTokens: config?.maxTokens ?? 4096 });
 }
