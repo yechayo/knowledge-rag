@@ -125,7 +125,7 @@ export function registerTools(server: McpServer): void {
         };
       }
 
-      const baseSlug = inputSlug || titleToSlug(title);
+      const baseSlug = inputSlug || titleToSlug(title) || title.replace(/\s+/g, '-').replace(/[\/\\#?&]/g, '').slice(0, 80) || `content-${Date.now()}`;
       if (!baseSlug) {
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ error: 'slug 生成为空，请检查标题' }) }],
