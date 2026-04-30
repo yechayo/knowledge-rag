@@ -379,4 +379,92 @@ export function registerTools(server: McpServer): void {
       };
     },
   );
+
+  // ── health_check ──
+  server.tool(
+    'health_check',
+    'RAG 全链路自检：创建测试内容 → 等待索引 → 语义搜索验证 → 清理。用于排查 Embedding 管道是否正常。',
+    {},
+    async () => {
+      const testTitle = `__rag_health_check_${Date.now()}__`;
+      const testBody = `这是一条 RAG 健康检查消息。如果这个内容能被语义搜索检索到，说明创建→分块→Embedding→存储→搜索全链路正常。校验码：${Date.now()}`;
+      const steps: string[] = [];
+      const startTime = Date.now();
+
+      let contentId: string | null = null;
+      let finalVerdict = 'UNKNOWN';
+
+      try {
+        // Step 1: 创建测试内容
+        const content = await prisma.content.create({
+          data: {
+            title: testTitle,
+            slug: `__rag-health-check-${Date.now()}`,
+            body: testBody,
+            category: 'note',
+            status: 'published',
+          },
+        });
+        contentId = content.id;
+        steps.push(`1) 创建成功: ${content.id}`);
+
+        // Step 2: 生成向量索引
+        const stats = await indexContent(content);
+        steps.push(`2) 索引完成: ${stats.totalChunks} chunks (body:${stats.contentBody} meta:${stats.contentMeta} img:${stats.imageDescriptions})`);
+
+        // Step 3: 等待 pgvector 写入生效
+        await new Promise((r) => setTimeout(r, 1000));
+
+        // Step 4: 语义搜索验证
+        const embedding = await generateEmbedding(testTitle);
+        const embeddingStr = vectorToPostgresFormat(embedding);
+        const results = await prisma.$queryRaw<Array<{ contentId: string; score: number }>>`
+          SELECT "contentId", 1 - (embedding <=> ${embeddingStr}::vector(256)) AS score
+          FROM "Chunk" WHERE "contentId" = ${contentId}
+          ORDER BY embedding <=> ${embeddingStr}::vector(256) ASC LIMIT 1
+        `;
+
+        if (results.length > 0 && results[0].score > 0.5) {
+          steps.push(`3) 检索成功: score=${results[0].score.toFixed(4)} ✓`);
+          finalVerdict = 'PASS';
+        } else if (results.length > 0) {
+          steps.push(`3) 检索低分: score=${results[0].score.toFixed(4)} ⚠`);
+          finalVerdict = 'DEGRADED';
+        } else {
+          steps.push('3) 检索失败: 未找到向量块 ✗');
+          finalVerdict = 'FAIL';
+        }
+      } catch (err) {
+        steps.push(`错误: ${err instanceof Error ? err.message : String(err)}`);
+        finalVerdict = 'ERROR';
+      } finally {
+        // Step 5: 清理测试数据
+        if (contentId) {
+          try {
+            await prisma.$transaction([
+              prisma.chunk.deleteMany({ where: { contentId } }),
+              prisma.content.delete({ where: { id: contentId } }),
+            ]);
+            steps.push(`4) 清理完成: ${contentId}`);
+          } catch {
+            steps.push('4) 清理失败');
+          }
+        }
+      }
+
+      const elapsed = Date.now() - startTime;
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            verdict: finalVerdict,
+            elapsedMs: elapsed,
+            timestamp: new Date().toISOString(),
+            steps,
+          }, null, 2),
+        }],
+        isError: finalVerdict === 'ERROR',
+      };
+    },
+  );
 }
