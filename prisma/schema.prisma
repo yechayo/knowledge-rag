@@ -121,10 +121,24 @@ model UsageLog {
   promptTokens   Int      @default(0) // 输入 token 数
   completionTokens Int    @default(0) // 输出 token 数
   totalTokens   Int      @default(0) // 总 token 数
+  metadata       Json     @default("{}") // 路由、意图识别和各阶段延迟等附加信息
   createdAt      DateTime @default(now())
 
   @@index([createdAt])
   @@index([sessionId])
+}
+
+model AgentModelConfig {
+  id        String   @id @default(cuid())
+  name      String
+  modelName String
+  baseURL   String
+  apiKey    String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isDefault])
 }
 
 model AgentSession {

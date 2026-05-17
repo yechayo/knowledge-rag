@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
-import { CustomChatModel } from "../llm";
+import { createAgentModel, CustomChatModel } from "../llm";
 
 describe("CustomChatModel", () => {
   afterEach(() => {
@@ -53,5 +53,12 @@ describe("CustomChatModel", () => {
         arguments: JSON.stringify({ query: "langchain tools" }),
       },
     }]);
+  });
+
+  it("requires an explicit agent model instead of falling back to GLM", () => {
+    vi.stubEnv("AGENT_MODEL_NAME", "");
+    vi.stubEnv("BIGMODEL_API_KEY", "zhipu-key");
+
+    expect(() => createAgentModel()).toThrow("缺少后台 Agent 模型配置");
   });
 });

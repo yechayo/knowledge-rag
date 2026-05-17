@@ -12,7 +12,7 @@
 │ 1. 用户认证       │────>│  NextAuth (Auth)    │────>│  PostgreSQL           │
 │ 2. 文档上传       │────>│  Upload API         │────>│  Local / Aliyun OSS   │
 │ 3. 知识库管理     │────>│  Prisma (ORM)       │────>│  智谱 AI (Embedding-3)│
-│ 4. 索引构建       │────>│  Indexing Worker    │     │  智谱 AI (GLM-5)     │
+│ 4. 索引构建       │────>│  Indexing Worker    │     │  DeepSeek Chat       │
 │ 5. RAG 问答      │────>│  Chat API + Retrieve │     │  pgvector             │
 │ 6. 引用溯源       │     │  Citation Evaluator │     │  Tavily Search        │
 │ 7. Agent 对话     │────>│  Agent Framework    │     │                       │
@@ -27,15 +27,15 @@
 - **文档管理**：支持上传 PDF，自动按页解析和智能分块
 - **向量化索引**：使用智谱 Embedding-3（256 维）进行文本向量化，存储至 pgvector
 - **手动索引控制**：上传后手动触发索引，避免意外 Token 消耗，支持失败重试
-- **智能检索**：多查询检索 + RRF（Reciprocal Rank Fusion）重排序
-- **流式问答**：基于 SSE 的实时流式回答，支持多轮对话与上下文压缩
+- **意图路由**：本地规则优先，必要时用 DeepSeek JSON 分类，分流 direct / retrieve_once / react_retrieve
+- **流式问答**：基于 SSE 的实时流式回答，轻量问题不触发检索，知识库问题按需检索
 - **精准引用溯源**：回答附带引用标记，点击可跳转至原文对应位置（支持 PDF 页码和文章锚点）
 - **引用质量评估**：自动评估引用的准确性和相关性
 
 ### AI Agent 系统
 
 - **ReAct Agent 框架**：基于 LangGraph 的推理-行动循环，支持工具调用
-- **多模型支持**：支持 GLM、OpenAI、DeepSeek 等 OpenAI-compatible 模型切换
+- **多模型支持**：支持 DeepSeek、OpenAI、OpenRouter 等 OpenAI-compatible 模型切换
 - **可扩展工具集**：内置工具注册表，支持 DuckDuckGo 搜索、Tavily 搜索、内容管理、URL 抓取等
 - **技能系统**：动态技能加载与管理，内置 brainstorming 技能，支持技能市场
 - **定时任务**：Cron 调度器，支持周期性和一次性定时执行
@@ -67,7 +67,7 @@
 | **ORM** | Prisma 7.4.2 |
 | **认证** | NextAuth.js v4 |
 | **AI 框架** | LangChain + LangGraph |
-| **大语言模型** | 智谱 AI GLM-5（可切换 OpenAI-compatible 模型） |
+| **大语言模型** | DeepSeek（前台 RAG 默认），后台 Agent 可配置 OpenAI-compatible 模型 |
 | **向量模型** | 智谱 Embedding-3（256 维） |
 | **搜索** | Tavily, DuckDuckGo |
 | **富文本** | TipTap |
@@ -119,9 +119,10 @@ knowledge-rag/
 │       │   ├── cron/          # 定时任务调度
 │       │   ├── stream/        # SSE 流式处理
 │       │   └── prompts/       # Agent 提示词模板
+│       ├── rag-chat/          # 前台 DeepSeek RAG 路由、检索、生成
 │       ├── langchain/         # LangChain 集成（LLM 配置等）
 │       ├── agent-chat/        # Agent 对话管理
-│       ├── glm.ts             # 智谱 AI GLM API 封装
+│       ├── glm.ts             # 旧 GLM API 封装（前台默认链路不使用）
 │       ├── embedding.ts       # 向量化 API 封装
 │       ├── citation-evaluator.ts  # 引用质量评估
 │       └── oss.ts             # 阿里云 OSS 封装
@@ -171,14 +172,18 @@ npm run dev
 | `DATABASE_URL` | 是 | PostgreSQL 连接字符串 |
 | `NEXTAUTH_SECRET` | 是 | NextAuth 密钥（`openssl rand -base64 32`） |
 | `NEXTAUTH_URL` | 是 | 站点 URL |
-| `BIGMODEL_API_KEY` | 是 | 智谱 AI API Key |
+| `BIGMODEL_API_KEY` | 是 | 智谱 AI API Key，仅用于 Embedding/索引 |
+| `DEEPSEEK_API_KEY` | 是 | 前台 RAG 聊天与意图识别使用的 DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | 否 | DeepSeek API 地址，默认 `https://api.deepseek.com` |
+| `RAG_MODEL_NAME` | 否 | 前台 RAG 默认模型，默认 `deepseek-v4-flash` |
+| `RAG_CLASSIFIER_MODEL_NAME` | 否 | 意图识别模型，默认跟随 `RAG_MODEL_NAME` |
 | `EMBEDDING_DIMENSIONS` | 否 | 向量维度，默认 256 |
 | `ADMIN_EMAIL` | 是 | 管理员邮箱 |
 | `TAVILY_API_KEY` | 否 | Tavily 搜索 API Key |
 | `MCP_API_KEY` | 否 | MCP 协议密钥 |
 | `AGENT_MODEL_NAME` | 否 | Agent 专用模型名称 |
 | `AGENT_API_KEY` | 否 | Agent 专用 API Key |
-| `AGENT_BASE_URL` | 否 | Agent 模型 API 地址 |
+| `AGENT_BASE_URL` | 否 | Agent 模型 API 地址；也可在后台模型设置中持久化配置 |
 | `ALIYUN_OSS_*` | 否 | 阿里云 OSS 配置（启用后使用 OSS 存储） |
 
 ## 数据模型
@@ -191,6 +196,7 @@ npm run dev
 | `Image` | 图片资源 |
 | `SiteConfig` | 站点配置项 |
 | `UsageLog` | API 使用日志（Token 用量、延迟等） |
+| `AgentModelConfig` | 后台 Agent 模型配置（服务端保存 API Key，列表接口只返回掩码） |
 | `AgentSession` | Agent 会话（消息历史、Token 统计） |
 | `Task` | Agent 任务（手动/定时，Cron 表达式） |
 | `AgentMemory` | Agent 记忆（上下文保持） |
@@ -204,7 +210,7 @@ npm run dev
 - `POST /api/auth/[...nextauth]` — 登录/登出
 
 ### RAG 对话
-- `POST /api/chat` — RAG 流式问答（多查询检索 + RRF 重排序）
+- `POST /api/chat` — DeepSeek 意图路由 RAG 流式问答（direct / retrieve_once / react_retrieve）
 - `POST /api/chat/v2` — V2 对话（支持 Thinking 模式）
 - `POST /api/retrieve` — 向量相似度检索
 
@@ -212,6 +218,8 @@ npm run dev
 - `GET /api/agent` — 获取任务列表
 - `POST /api/agent` — 执行任务
 - `POST /api/agent/stream` — Agent 流式执行
+- `GET/POST /api/agent/model-configs` — Agent 模型配置列表/创建
+- `PATCH/DELETE /api/agent/model-configs/[id]` — Agent 模型配置更新/删除
 - `GET /api/agent/[taskId]` — 获取任务详情
 - `POST /api/agent/cron` — 定时任务管理
 - `POST /api/agent/schedule` — 任务调度
@@ -266,7 +274,7 @@ npm run build && npm start
 
 ### 为什么 Agent 支持多模型切换？
 
-不同场景适合不同模型——GLM 系列性价比高适合日常任务，GPT-4o 等模型在复杂推理场景表现更好。通过环境变量即可切换，无需修改代码。
+不同场景适合不同模型。后台 Agent 可以通过数据库持久化配置或环境变量切换 OpenAI-compatible 模型，浏览器只保存当前配置 ID，API Key 由服务端读取。
 
 ## License
 

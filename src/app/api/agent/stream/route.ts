@@ -70,12 +70,36 @@ export async function POST(req: Request) {
   try { userId = await requireAdmin(); }
   catch { return new Response("data: " + JSON.stringify({ type: "error", data: { message: "Unauthorized" } }) + "\n\n", { status: 401, headers: SSE_HEADERS }); }
 
-  let body: { message?: string; sessionKey?: string; skill?: string; modelConfig?: AgentModelConfig };
+  let body: { message?: string; sessionKey?: string; skill?: string; modelConfig?: AgentModelConfig; modelConfigId?: string };
   try { body = await req.json(); } catch { return new Response("data: " + JSON.stringify({ type: "error", data: { message: "Invalid request body" } }) + "\n\n", { status: 400, headers: SSE_HEADERS }); }
 
-  const { message, sessionKey, skill: explicitSkill, modelConfig } = body;
+  const { message, sessionKey, skill: explicitSkill, modelConfigId } = body;
+  let { modelConfig } = body;
   if (!message || typeof message !== "string") {
     return new Response("data: " + JSON.stringify({ type: "error", data: { message: "Invalid message" } }) + "\n\n", { status: 400, headers: SSE_HEADERS });
+  }
+
+  if (modelConfigId) {
+    try {
+      const saved = await prisma.agentModelConfig.findUnique({ where: { id: modelConfigId } });
+      if (!saved) {
+        return new Response("data: " + JSON.stringify({ type: "error", data: { message: "模型配置不存在" } }) + "\n\n", { status: 404, headers: SSE_HEADERS });
+      }
+      modelConfig = {
+        modelName: saved.modelName,
+        baseURL: saved.baseURL,
+        apiKey: saved.apiKey,
+      };
+    } catch {
+      return new Response("data: " + JSON.stringify({ type: "error", data: { message: "模型配置读取失败" } }) + "\n\n", { status: 500, headers: SSE_HEADERS });
+    }
+  }
+
+  if (!modelConfig?.modelName && !process.env.AGENT_MODEL_NAME) {
+    return new Response(
+      "data: " + JSON.stringify({ type: "error", data: { message: "缺少后台 Agent 模型配置（请在模型设置中保存并选择配置）" } }) + "\n\n",
+      { status: 400, headers: SSE_HEADERS }
+    );
   }
 
   // 会话初始化
@@ -120,7 +144,16 @@ export async function POST(req: Request) {
   const { tools, rawTools } = createToolRegistry({ userId, guard, limits });
 
   // LLM
-  const llm = createAgentModel({ temperature: 0.7, maxTokens: 8000 }, modelConfig);
+  let llm;
+  try {
+    llm = createAgentModel({ temperature: 0.7, maxTokens: 8000 }, modelConfig);
+  } catch (error) {
+    if (engine && engineInitialized) { try { await engine.release(); } catch {} }
+    return new Response(
+      "data: " + JSON.stringify({ type: "error", data: { message: error instanceof Error ? error.message : "模型配置无效" } }) + "\n\n",
+      { status: 400, headers: SSE_HEADERS }
+    );
+  }
 
   // 加载历史 + trimMessages 裁剪（只裁对话历史，工作上下文在 system prompt 中）
   try { await engine.checkAndCompact(skillPrompt); } catch {}

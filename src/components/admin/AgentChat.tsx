@@ -160,7 +160,13 @@ export default function AgentChat() {
       const res = await fetch("/api/agent/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content || `/${skillParam}`, sessionKey, skill: skillParam, modelConfig }),
+        body: JSON.stringify({
+          message: content || `/${skillParam}`,
+          sessionKey,
+          skill: skillParam,
+          modelConfigId: modelConfig?.id,
+          modelConfig: modelConfig?.id ? undefined : modelConfig,
+        }),
         signal: abortControllerRef.current.signal,
       });
 

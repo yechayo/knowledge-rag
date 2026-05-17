@@ -483,15 +483,12 @@ export class CustomChatModel extends BaseChatModel {
 
 export function createAgentModel(options?: AgentModelOptions, runtimeConfig?: AgentModelConfig): BaseChatModel {
   const modelName = runtimeConfig?.modelName ?? process.env.AGENT_MODEL_NAME;
-  if (modelName) {
-    const apiKey = runtimeConfig?.apiKey ?? process.env.AGENT_API_KEY;
-    if (!apiKey) throw new Error("缺少 API Key（请在模型设置中配置）");
-    const baseURL = runtimeConfig?.baseURL ?? process.env.AGENT_BASE_URL;
-    if (!baseURL) throw new Error("缺少 API Base URL（请在模型设置中配置）");
-    return new CustomChatModel({ modelName, apiKey, baseURL, temperature: options?.temperature ?? runtimeConfig?.temperature ?? parseFloat(process.env.AGENT_TEMPERATURE ?? "0.7"), maxTokens: options?.maxTokens ?? runtimeConfig?.maxTokens ?? parseInt(process.env.AGENT_MAX_TOKENS ?? "8000", 10) });
-  }
-  // 默认使用 GLM
-  return createGLM5({ temperature: options?.temperature ?? 0.7, maxTokens: options?.maxTokens ?? 4096 });
+  if (!modelName) throw new Error("缺少后台 Agent 模型配置（请在模型设置中保存并选择配置）");
+  const apiKey = runtimeConfig?.apiKey ?? process.env.AGENT_API_KEY;
+  if (!apiKey) throw new Error("缺少 API Key（请在模型设置中配置）");
+  const baseURL = runtimeConfig?.baseURL ?? process.env.AGENT_BASE_URL;
+  if (!baseURL) throw new Error("缺少 API Base URL（请在模型设置中配置）");
+  return new CustomChatModel({ modelName, apiKey, baseURL, temperature: options?.temperature ?? runtimeConfig?.temperature ?? parseFloat(process.env.AGENT_TEMPERATURE ?? "0.7"), maxTokens: options?.maxTokens ?? runtimeConfig?.maxTokens ?? parseInt(process.env.AGENT_MAX_TOKENS ?? "8000", 10) });
 }
 
 /**
