@@ -5,6 +5,24 @@
   --color-foreground: var(--text-1);
   --font-sans: 'Nunito', 'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
   --font-mono: 'Cascadia Code', 'JetBrains Mono', monospace;
+  --cursor-default: url('/cursor-icon.png') 4 0, auto;
+  --cursor-pointer: url('/cursor-icon.png') 4 0, pointer;
+  --cursor-text: text;
+}
+
+* {
+  cursor: url('/cursor-icon.png') 4 0, auto !important;
+}
+
+a, button, summary, label, [role="button"], [role="link"],
+.cursor-pointer, [class*="cursor-pointer"] {
+  cursor: url('/cursor-icon.png') 4 0, pointer !important;
+}
+
+input, textarea, select,
+[contenteditable="true"], [contenteditable="true"] *,
+.cursor-text {
+  cursor: text !important;
 }
 
 :root {
@@ -89,24 +107,6 @@ body {
   transition: background 0.3s, color 0.3s;
   font-size: 17px;
   letter-spacing: 0;
-  cursor: url('/cursor-icon.png') 4 0, auto;
-}
-
-a,
-button,
-summary,
-label,
-[role="button"],
-[role="link"] {
-  cursor: url('/cursor-icon.png') 4 0, pointer;
-}
-
-input,
-textarea,
-select,
-[contenteditable="true"],
-[contenteditable="true"] * {
-  cursor: text;
 }
 
 /* 放大文字，不影响布局 */
