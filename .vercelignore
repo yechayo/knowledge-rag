@@ -1,0 +1,10 @@
+.env
+.env.*
+.vercel/
+.next/
+node_modules/
+uploads/
+task_plan.md
+findings.md
+progress.md
+docs/bepGlW7tmzl7Ybcv

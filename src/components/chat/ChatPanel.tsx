@@ -64,9 +64,9 @@ function InlineRef({
   );
 }
 
-/** 解析 [[REF:/path/to/article#anchor|缩写内容]] 格式的内联引用 */
+/** 解析 [[REF:/path/to/article#anchor|缩写内容]] 或 [[REF:/path/to/article#anchor]] 格式的内联引用 */
 function parseInlineRefs(content: string, sources?: Source[]): React.ReactNode[] {
-  const refPattern = /\[\[REF:([^|\]]+)\|([^\]]+)\]\]/g;
+  const refPattern = /\[\[REF:([^|\]]+?)(?:\|([^\]]+))?\]\]/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
@@ -106,8 +106,11 @@ function parseInlineRefs(content: string, sources?: Source[]): React.ReactNode[]
       );
     }
 
-    const href = match[1]; // 完整链接，如 /article/react-hooks#usestate基础用法
-    const label = match[2]; // 缩写内容
+    const href = match[1];
+    // label 可选，缺失时从 anchor 或 slug 中提取显示文本
+    const rawLabel = match[2];
+    const fallback = href.includes('#') ? href.split('#').pop()! : href.split('/').pop()!;
+    const label = rawLabel || fallback || href;
 
     parts.push(
       <InlineRef

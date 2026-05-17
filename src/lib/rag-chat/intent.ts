@@ -10,7 +10,7 @@ interface ClassifierPayload {
 }
 
 const GREETING_RE = /^(你好|您好|hi|hello|hey|嗨|在吗|早上好|下午好|晚上好)[！!。.\s]*$/i;
-const KNOWLEDGE_RE = /(知识库|站内|文章|内容|分类|项目|笔记|文档|博客|这篇|有哪些|列出|查一下|检索|搜索)/i;
+const KNOWLEDGE_RE = /(知识库|站内|文章|内容|分类|项目|笔记|文档|博客|这篇|有哪些|列出|查一下|检索|搜索|地址|网址|链接|网站|url|site)/i;
 const COMPLEX_RE = /(对比|比较|总结|归纳|共同点|不同点|多篇|分别|综合|整理|根据.*和|跨.*文章|多跳|详细分析)/i;
 const GENERAL_DIRECT_RE = /^(什么是|解释一下|解释|为什么|如何|怎么)\s*\S+/i;
 

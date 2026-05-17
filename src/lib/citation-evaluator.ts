@@ -122,13 +122,15 @@ export function extractKeyTerms(text: string): string[] {
  */
 export function extractCitations(content: string): Citation[] {
   const citations: Citation[] = [];
-  const pattern = /\[\[REF:([^|\]]+)\|([^\]]+)\]\]/g;
+  const pattern = /\[\[REF:([^|\]]+?)(?:\|([^\]]+))?\]\]/g;
   let match;
 
   while ((match = pattern.exec(content)) !== null) {
+    const href = match[1];
+    const fallback = href.includes('#') ? href.split('#').pop()! : href.split('/').pop()!;
     citations.push({
-      href: match[1],
-      label: match[2],
+      href,
+      label: match[2] || fallback || href,
     });
   }
 

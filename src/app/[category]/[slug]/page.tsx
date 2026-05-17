@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -170,7 +170,7 @@ export default function DetailPage() {
 
   // Dynamic bottom padding on <main> so the last heading can scroll to viewport top,
   // enabling TOC scroll-spy to correctly highlight the last item.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const main = mainRef.current;
     if (!main) return;
 
@@ -191,8 +191,15 @@ export default function DetailPage() {
 
     recalculate();
     window.addEventListener("resize", recalculate);
-    return () => window.removeEventListener("resize", recalculate);
-  });
+
+    const observer = new ResizeObserver(recalculate);
+    observer.observe(main);
+
+    return () => {
+      window.removeEventListener("resize", recalculate);
+      observer.disconnect();
+    };
+  }, [content, isEditing]);
 
   // 获取文章内容
   useEffect(() => {
