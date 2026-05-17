@@ -19,12 +19,14 @@ export default function FilterBar({
     <div className="flex flex-wrap items-center gap-2">
       <button
         onClick={() => onTagChange(null)}
-        className="px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1"
+        className="px-4 py-2 rounded-full text-sm font-black transition-all duration-200 flex items-center gap-1"
         style={{
           background: activeTag === null ? "var(--accent)" : "var(--card)",
           color: activeTag === null ? "#fff" : "var(--text-2)",
           border:
-            activeTag === null ? "1px solid var(--accent)" : "1px solid var(--border)",
+            activeTag === null ? "2px solid var(--accent)" : "2px solid var(--border)",
+          boxShadow:
+            activeTag === null ? "0 4px 0 var(--island-teal-deep)" : "var(--island-shadow-press-small)",
         }}
       >
         全部
@@ -44,13 +46,15 @@ export default function FilterBar({
         <button
           key={tag}
           onClick={() => onTagChange(tag === activeTag ? null : tag)}
-          className="px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1"
-          style={{
-            background: activeTag === tag ? "var(--accent)" : "var(--card)",
-            color: activeTag === tag ? "#fff" : "var(--text-2)",
-            border:
-              activeTag === tag ? "1px solid var(--accent)" : "1px solid var(--border)",
-          }}
+        className="px-4 py-2 rounded-full text-sm font-black transition-all duration-200 flex items-center gap-1"
+        style={{
+          background: activeTag === tag ? "var(--accent)" : "var(--card)",
+          color: activeTag === tag ? "#fff" : "var(--text-2)",
+          border:
+            activeTag === tag ? "2px solid var(--accent)" : "2px solid var(--border)",
+          boxShadow:
+            activeTag === tag ? "0 4px 0 var(--island-teal-deep)" : "var(--island-shadow-press-small)",
+        }}
         >
           {tag}
           {tagCounts && tagCounts[tag] !== undefined && (

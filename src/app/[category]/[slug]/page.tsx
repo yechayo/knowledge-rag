@@ -441,7 +441,10 @@ export default function DetailPage() {
           {/* Main Content */}
           <main ref={mainRef} className="flex-1 min-w-0">
             {/* Banner */}
-            <div className="rounded-2xl overflow-hidden mb-6" style={{ border: "1px solid var(--border)" }}>
+            <div
+              className="rounded-[34px] overflow-hidden mb-6"
+              style={{ border: "3px solid var(--border)", boxShadow: "var(--island-shadow-press)" }}
+            >
               {/* Cover Image */}
               <div className="relative h-[200px] sm:h-[260px] group">
                 <Image
@@ -469,7 +472,7 @@ export default function DetailPage() {
                         <select
                           value={editCategory}
                           onChange={(e) => setEditCategory(e.target.value)}
-                          className="px-2.5 py-0.5 rounded-full text-xs font-medium outline-none cursor-pointer"
+                            className="px-2.5 py-0.5 rounded-full text-xs font-black outline-none cursor-pointer"
                           style={{ background: "rgba(255,255,255,0.2)", color: "#fff", backdropFilter: "blur(4px)", border: "none", appearance: "auto" }}
                         >
                           {allCategories.map((c) => (
@@ -479,12 +482,12 @@ export default function DetailPage() {
                           ))}
                         </select>
                       ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.2)", color: "#fff", backdropFilter: "blur(4px)" }}>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-black" style={{ background: "rgba(255,253,245,0.82)", color: "var(--island-on-warm)", backdropFilter: "blur(8px)" }}>
                           {categoryLabel}
                         </span>
                       )}
                       {tags.map((tag: string) => (
-                        <span key={tag} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(4px)" }}>
+                        <span key={tag} className="px-2.5 py-0.5 rounded-full text-xs font-black" style={{ background: "rgba(255,253,245,0.72)", color: "var(--island-on-warm)", backdropFilter: "blur(8px)" }}>
                           {tag}
                         </span>
                       ))}
@@ -519,10 +522,11 @@ export default function DetailPage() {
 
             {/* Article Body or Editor */}
             <div
-              className="rounded-2xl p-6 sm:p-8"
+              className="rounded-[34px] p-6 sm:p-8"
               style={{
                 background: "var(--card)",
-                border: isEditing ? "2px solid var(--accent)" : "1px solid var(--border)",
+                border: isEditing ? "3px solid var(--accent)" : "3px solid var(--border)",
+                boxShadow: "var(--island-shadow-press)",
               }}
             >
               {isEditing ? (
@@ -534,15 +538,15 @@ export default function DetailPage() {
 
             {/* Prev / Next Navigation */}
             {!isEditing && (prevArticle || nextArticle) && (
-              <div className="mt-6 rounded-2xl p-4 flex gap-4" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <div className="mt-6 rounded-[28px] p-4 flex gap-4" style={{ background: "var(--card)", border: "3px solid var(--border)", boxShadow: "var(--island-shadow-press-small)" }}>
                 {prevArticle ? (
-                  <Link href={`/${prevArticle.category}/${prevArticle.slug}`} className="flex-1 group p-3 rounded-xl transition-colors" style={{ background: "var(--card-hover)" }}>
+                  <Link href={`/${prevArticle.category}/${prevArticle.slug}`} className="flex-1 group p-3 rounded-[22px] transition-colors" style={{ background: "var(--card-hover)", border: "2px solid rgba(196,184,158,0.55)" }}>
                     <div className="text-xs mb-1" style={{ color: "var(--text-3)" }}>上一篇</div>
                     <div className="text-sm font-medium truncate" style={{ color: "var(--text-2)" }}>{prevArticle.title}</div>
                   </Link>
                 ) : <div className="flex-1" />}
                 {nextArticle ? (
-                  <Link href={`/${nextArticle.category}/${nextArticle.slug}`} className="flex-1 group p-3 rounded-xl text-right transition-colors" style={{ background: "var(--card-hover)" }}>
+                  <Link href={`/${nextArticle.category}/${nextArticle.slug}`} className="flex-1 group p-3 rounded-[22px] text-right transition-colors" style={{ background: "var(--card-hover)", border: "2px solid rgba(196,184,158,0.55)" }}>
                     <div className="text-xs mb-1" style={{ color: "var(--text-3)" }}>下一篇</div>
                     <div className="text-sm font-medium truncate" style={{ color: "var(--text-2)" }}>{nextArticle.title}</div>
                   </Link>
@@ -558,10 +562,11 @@ export default function DetailPage() {
       {/* Back to top */}
       <button
         onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        className="fixed bottom-[4.5rem] right-6 z-40 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300"
+        className="fixed bottom-[4.5rem] right-6 z-40 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300"
         style={{
           background: "var(--card)",
-          border: "1px solid var(--border)",
+          border: "2px solid var(--border)",
+          boxShadow: "var(--island-shadow-press-small)",
           opacity: showTopBtn ? 1 : 0,
           pointerEvents: showTopBtn ? "auto" : "none",
           transform: showTopBtn ? "translateY(0)" : "translateY(16px)",

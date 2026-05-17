@@ -55,7 +55,7 @@ function InlineRef({
   return (
     <a
       href={href}
-      className="inline-block align-middle mx-0.5 px-1 py-0.5 rounded cursor-pointer text-[var(--accent)] opacity-70 hover:opacity-100 underline underline-offset-2 text-xs leading-none"
+      className="inline-block align-middle mx-0.5 px-2 py-0.5 rounded-full cursor-pointer text-[var(--accent)] bg-[var(--accent-bg)] opacity-90 hover:opacity-100 text-xs leading-none font-black no-underline"
       title={label}
       onClick={handleClick}
     >
@@ -138,7 +138,7 @@ function MarkdownText({ text }: { text: string }) {
         if (part.startsWith("```") && part.endsWith("```")) {
           const code = part.slice(3, -3).replace(/^\w+\n/, "");
           return (
-            <code key={i} className="block rounded bg-[var(--bg)] px-2 py-1 text-xs my-1">
+            <code key={i} className="block rounded-[14px] bg-[var(--bg)] px-2 py-1 text-xs my-1">
               {code}
             </code>
           );
@@ -148,7 +148,7 @@ function MarkdownText({ text }: { text: string }) {
         }
         if (part.startsWith("`") && part.endsWith("`")) {
           return (
-            <code key={i} className="rounded bg-[var(--bg)] px-1 py-0.5 text-xs">
+            <code key={i} className="rounded-full bg-[var(--bg)] px-1.5 py-0.5 text-xs">
               {part.slice(1, -1)}
             </code>
           );
@@ -319,13 +319,20 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-20 right-6 z-50 flex h-[460px] w-[360px] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+    <div
+      className="fixed bottom-24 right-6 z-50 flex h-[460px] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[34px]"
+      style={{
+        background: "var(--card)",
+        border: "3px solid var(--border)",
+        boxShadow: "var(--island-shadow-press)",
+      }}
+    >
       {/* 头部 */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h3 className="text-sm font-semibold text-[var(--text-1)]">AI 问答</h3>
+      <div className="flex items-center justify-between px-4 py-3" style={{ background: "var(--island-yellow)", borderBottom: "3px solid #e6bb2c" }}>
+        <h3 className="text-sm font-black text-[var(--island-on-warm)]">知识岛助手</h3>
         <button
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-3)] transition-colors hover:bg-[var(--card-hover)] hover:text-[var(--text-1)]"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--island-on-warm)] transition-colors hover:bg-white/30"
           aria-label="关闭"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -336,18 +343,20 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
       </div>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3" style={{ background: "var(--island-paper-white)" }}>
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-[var(--text-3)]">你好！有什么可以帮你的吗？</p>
+            <p className="text-sm font-bold text-[var(--text-3)]">你好！有什么可以帮你的吗？</p>
           </div>
         )}
 
         {messages.map((msg, idx) => (
           <div key={idx} className={`mb-3 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
-                msg.role === "user" ? "bg-[var(--accent)] text-white" : "bg-[var(--card-hover)] text-[var(--text-1)]"
+              className={`max-w-[85%] rounded-[20px] px-3 py-2 text-sm leading-relaxed border-2 ${
+                msg.role === "user"
+                  ? "bg-[var(--accent)] text-white border-[#7adfd7] shadow-[0_3px_0_var(--island-teal-deep)]"
+                  : "bg-[var(--island-paper-soft)] text-[var(--text-1)] border-[#e8dcc8] shadow-[0_3px_0_var(--island-sand-deep)]"
               }`}
             >
               <RichMessageContent content={msg.content} sources={msg.sources} />
@@ -362,7 +371,7 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
       </div>
 
       {/* 输入区域 */}
-      <div className="border-t border-[var(--border)] px-3 py-2">
+      <div className="px-3 py-3" style={{ background: "var(--island-paper-soft)", borderTop: "3px solid #e8dcc8" }}>
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -372,12 +381,14 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
             onKeyDown={handleKeyDown}
             placeholder="输入问题..."
             disabled={isLoading}
-            className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text-1)] placeholder-[var(--text-3)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+            className="flex-1 rounded-full border-[3px] border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm font-bold text-[var(--text-1)] placeholder-[var(--text-3)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+            style={{ boxShadow: "var(--island-shadow-press-small)" }}
           />
           <button
             onClick={sendMessage}
             disabled={isLoading || !input.trim()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-white transition-opacity disabled:opacity-50"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-opacity disabled:opacity-50"
+            style={{ boxShadow: "0 4px 0 var(--island-teal-deep)" }}
             aria-label="发送"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

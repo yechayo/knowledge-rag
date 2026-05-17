@@ -85,7 +85,7 @@ export default function TocWidget({ body }: TocWidgetProps) {
   return (
     <div>
       <h3
-        className="text-xs font-semibold uppercase tracking-wider mb-3"
+        className="text-xs font-black uppercase tracking-wider mb-3"
         style={{ color: "var(--text-3)" }}
       >
         目录
@@ -95,16 +95,16 @@ export default function TocWidget({ body }: TocWidgetProps) {
           <li key={item.id}>
             <button
               onClick={() => handleClick(item.id)}
-              className="block w-full text-left transition-colors rounded px-2 py-1"
+              className="block w-full text-left transition-colors rounded-[14px] px-2 py-1.5"
               style={{
                 paddingLeft: item.level === 3 ? "1.25rem" : "0.5rem",
                 color:
                   activeId === item.id
-                    ? "var(--accent)"
+                    ? "#fff"
                     : "var(--text-2)",
-                fontWeight: activeId === item.id ? 600 : 400,
+                fontWeight: activeId === item.id ? 900 : 700,
                 background:
-                  activeId === item.id ? "var(--accent-bg)" : "transparent",
+                  activeId === item.id ? "var(--accent)" : "transparent",
               }}
             >
               {item.text}

@@ -43,14 +43,18 @@ export default function SloganCard() {
       {/* Quotation marks */}
       <div
         className="text-5xl font-serif leading-none select-none mb-2"
-        style={{ color: "var(--accent)", opacity: 0.3 }}
+        style={{
+          color: "var(--island-yellow)",
+          opacity: 0.9,
+          textShadow: "0 3px 0 rgba(189,174,160,0.55)",
+        }}
       >
         &ldquo;
       </div>
 
       {/* Slogan text */}
       <p
-        className="text-sm text-center leading-relaxed px-2"
+        className="text-base text-center leading-relaxed px-2 font-black"
         style={{ color: "var(--text-2)" }}
       >
         {slogans[index]}
@@ -59,7 +63,11 @@ export default function SloganCard() {
       {/* Close quote */}
       <div
         className="text-5xl font-serif leading-none select-none mt-2 self-end mr-2"
-        style={{ color: "var(--accent)", opacity: 0.3 }}
+        style={{
+          color: "var(--island-yellow)",
+          opacity: 0.9,
+          textShadow: "0 3px 0 rgba(189,174,160,0.55)",
+        }}
       >
         &rdquo;
       </div>
@@ -69,13 +77,15 @@ export default function SloganCard() {
         onClick={refresh}
         className="absolute bottom-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
         style={{
-          border: "1px solid var(--border)",
+          border: "2px solid var(--border)",
           color: "var(--text-3)",
+          background: "var(--island-paper)",
+          boxShadow: "var(--island-shadow-press-small)",
         }}
         onMouseEnter={(e) => {
           const el = e.currentTarget;
           el.style.color = "var(--accent)";
-          el.style.borderColor = "rgba(99,102,241,0.3)";
+          el.style.borderColor = "var(--island-line-dark)";
           el.style.transform = "rotate(180deg)";
         }}
         onMouseLeave={(e) => {

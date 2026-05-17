@@ -10,7 +10,10 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="p-2 rounded-lg hover:bg-[var(--card-hover)] transition-colors"
+      className="p-2 rounded-full hover:bg-[var(--card-hover)] transition-colors"
+      style={{
+        border: "2px solid transparent",
+      }}
       aria-label="切换主题"
     >
       {theme === "dark" ? (

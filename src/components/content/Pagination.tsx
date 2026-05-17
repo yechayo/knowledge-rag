@@ -52,11 +52,12 @@ export default function Pagination({
       <button
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage <= 1}
-        className="flex items-center justify-center w-9 h-9 rounded-lg text-sm transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+        className="flex items-center justify-center w-10 h-10 rounded-full text-sm transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
         style={{
           background: "var(--card)",
-          border: "1px solid var(--border)",
+          border: "2px solid var(--border)",
           color: "var(--text-2)",
+          boxShadow: "var(--island-shadow-press-small)",
         }}
       >
         <svg
@@ -88,15 +89,19 @@ export default function Pagination({
           <button
             key={page}
             onClick={() => onPageChange(page)}
-            className="flex items-center justify-center w-9 h-9 rounded-lg text-sm font-medium transition-all duration-200"
+            className="flex items-center justify-center w-10 h-10 rounded-full text-sm font-black transition-all duration-200"
             style={{
               background:
                 page === currentPage ? "var(--accent)" : "var(--card)",
               color: page === currentPage ? "#fff" : "var(--text-2)",
               border:
                 page === currentPage
-                  ? "1px solid var(--accent)"
-                  : "1px solid var(--border)",
+                  ? "2px solid var(--accent)"
+                  : "2px solid var(--border)",
+              boxShadow:
+                page === currentPage
+                  ? "0 4px 0 var(--island-teal-deep)"
+                  : "var(--island-shadow-press-small)",
             }}
           >
             {page}
@@ -108,11 +113,12 @@ export default function Pagination({
       <button
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage >= totalPages}
-        className="flex items-center justify-center w-9 h-9 rounded-lg text-sm transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+        className="flex items-center justify-center w-10 h-10 rounded-full text-sm transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
         style={{
           background: "var(--card)",
-          border: "1px solid var(--border)",
+          border: "2px solid var(--border)",
           color: "var(--text-2)",
+          boxShadow: "var(--island-shadow-press-small)",
         }}
       >
         <svg

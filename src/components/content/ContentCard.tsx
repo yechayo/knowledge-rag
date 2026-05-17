@@ -53,10 +53,10 @@ export default function ContentCard({
     <div className="group relative">
       <Link href={`/${category}/${slug}`} className="block">
         <div
-          className="rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
+          className="island-pressable rounded-[30px] overflow-hidden transition-all duration-300"
           style={{
             background: "var(--card)",
-            border: "1px solid var(--border)",
+            border: "3px solid var(--border)",
           }}
         >
           {/* Cover Image */}
@@ -72,9 +72,10 @@ export default function ContentCard({
             <span
               className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-medium"
               style={{
-                background: "rgba(0,0,0,0.4)",
-                color: "#fff",
-                backdropFilter: "blur(4px)",
+                background: "rgba(255,253,245,0.86)",
+                color: "var(--island-on-warm)",
+                border: "2px solid rgba(255,255,255,0.8)",
+                backdropFilter: "blur(8px)",
               }}
             >
               {displayLabel}
@@ -89,7 +90,7 @@ export default function ContentCard({
                 {tags.slice(0, 3).map((tag: string) => (
                   <span
                     key={tag}
-                    className="px-2 py-0.5 rounded-full text-xs"
+                    className="px-2 py-0.5 rounded-full text-xs font-black"
                     style={{
                       background: "var(--accent-bg)",
                       color: "var(--accent)",
@@ -100,7 +101,7 @@ export default function ContentCard({
                 ))}
                 {tags.length > 3 && (
                   <span
-                    className="px-2 py-0.5 rounded-full text-xs"
+                    className="px-2 py-0.5 rounded-full text-xs font-black"
                     style={{
                       background: "var(--card-hover)",
                       color: "var(--text-3)",
@@ -114,7 +115,7 @@ export default function ContentCard({
 
             {/* Title */}
             <h3
-              className="text-base font-semibold leading-snug mb-2 transition-colors duration-200 group-hover:text-[var(--accent)]"
+              className="text-base font-black leading-snug mb-2 transition-colors duration-200 group-hover:text-[var(--accent)]"
               style={{
                 color: "var(--text-1)",
                 display: "-webkit-box",
@@ -163,8 +164,8 @@ export default function ContentCard({
       {isAdmin && (
         <Link
           href={`/${category}/${slug}`}
-          className="absolute top-[148px] right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-md"
-          style={{ background: "var(--accent)" }}
+          className="absolute top-[148px] right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 px-3 py-1.5 rounded-full text-xs font-black text-white"
+          style={{ background: "var(--accent)", boxShadow: "0 3px 0 var(--island-teal-deep)" }}
         >
           编辑
         </Link>

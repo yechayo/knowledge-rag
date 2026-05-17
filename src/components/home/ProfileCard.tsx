@@ -78,17 +78,23 @@ export default function ProfileCard() {
       <div className="flex gap-3 mt-5">
         <Link
           href="/about"
-          className="px-5 py-2 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90"
-          style={{ background: "var(--accent)" }}
+          className="island-pressable px-5 py-2 rounded-full text-sm font-black transition-all"
+          style={{
+            background: "var(--island-yellow)",
+            border: "2px solid #ffd943",
+            color: "var(--island-on-warm)",
+          }}
         >
           关于我
         </Link>
         <Link
           href="/message"
-          className="px-5 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
+          className="px-5 py-2 rounded-full text-sm font-black transition-all"
           style={{
             color: "var(--text-2)",
-            border: "1px solid var(--border)",
+            border: "3px dashed var(--island-line)",
+            background: "var(--island-paper)",
+            boxShadow: "var(--island-shadow-press-small)",
           }}
         >
           留言
@@ -104,10 +110,12 @@ export default function ProfileCard() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label={s.label}
-            className="p-2 rounded-lg transition-all hover:scale-110"
+            className="p-2 rounded-full transition-all hover:-translate-y-1 hover:rotate-[-6deg]"
             style={{
               color: "var(--text-3)",
-              border: "1px solid var(--border)",
+              border: "2px solid var(--border)",
+              background: "var(--island-paper-soft)",
+              boxShadow: "var(--island-shadow-press-small)",
             }}
           >
             {s.icon}

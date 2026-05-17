@@ -8,25 +8,25 @@ interface Skill {
 }
 
 const row1: Skill[] = [
-  { name: "React", icon: "react", bg: "#20232A", url: "https://react.dev" },
-  { name: "TypeScript", icon: "typescript", bg: "#3178C6", url: "https://www.typescriptlang.org" },
-  { name: "Next.js", icon: "nextdotjs", bg: "#171717", url: "https://nextjs.org" },
-  { name: "OpenAI", icon: "openai", bg: "#412991", url: "https://openai.com" },
-  { name: "Python", icon: "python", bg: "#3776AB", url: "https://www.python.org" },
-  { name: "Docker", icon: "docker", bg: "#2496ED", url: "https://www.docker.com" },
-  { name: "智谱AI", icon: "zhipuai", bg: "#3E6BF0", url: "https://open.bigmodel.cn" },
-  { name: "Tailwind", icon: "tailwindcss", bg: "#06B6D4", url: "https://tailwindcss.com" },
+  { name: "React", icon: "react", bg: "var(--island-teal)", url: "https://react.dev" },
+  { name: "TypeScript", icon: "typescript", bg: "var(--island-blue)", url: "https://www.typescriptlang.org" },
+  { name: "Next.js", icon: "nextdotjs", bg: "var(--island-green)", url: "https://nextjs.org" },
+  { name: "OpenAI", icon: "openai", bg: "var(--island-orange)", url: "https://openai.com" },
+  { name: "Python", icon: "python", bg: "var(--island-pink)", url: "https://www.python.org" },
+  { name: "Docker", icon: "docker", bg: "var(--island-teal)", url: "https://www.docker.com" },
+  { name: "智谱AI", icon: "zhipuai", bg: "var(--island-yellow)", url: "https://open.bigmodel.cn" },
+  { name: "Tailwind", icon: "tailwindcss", bg: "var(--island-blue)", url: "https://tailwindcss.com" },
 ];
 
 const row2: Skill[] = [
-  { name: "Go", icon: "go", bg: "#00ADD8", url: "https://go.dev" },
-  { name: "Redis", icon: "redis", bg: "#DC382D", url: "https://redis.io" },
-  { name: "Node.js", icon: "nodedotjs", bg: "#339933", url: "https://nodejs.org" },
-  { name: "PostgreSQL", icon: "postgresql", bg: "#336791", url: "https://www.postgresql.org" },
-  { name: "Git", icon: "git", bg: "#F05032", url: "https://git-scm.com" },
-  { name: "Flock", icon: "flock", bg: "#6C3FC5", url: "https://flock.io" },
-  { name: "Linux", icon: "linux", bg: "#FCC624", url: "https://www.kernel.org" },
-  { name: "Vercel", icon: "vercel", bg: "#171717", url: "https://vercel.com" },
+  { name: "Go", icon: "go", bg: "var(--island-orange)", url: "https://go.dev" },
+  { name: "Redis", icon: "redis", bg: "var(--island-red)", url: "https://redis.io" },
+  { name: "Node.js", icon: "nodedotjs", bg: "var(--island-green)", url: "https://nodejs.org" },
+  { name: "PostgreSQL", icon: "postgresql", bg: "var(--island-blue)", url: "https://www.postgresql.org" },
+  { name: "Git", icon: "git", bg: "var(--island-yellow)", url: "https://git-scm.com" },
+  { name: "Flock", icon: "flock", bg: "var(--island-pink)", url: "https://flock.io" },
+  { name: "Linux", icon: "linux", bg: "var(--island-teal)", url: "https://www.kernel.org" },
+  { name: "Vercel", icon: "vercel", bg: "var(--island-orange)", url: "https://vercel.com" },
 ];
 
 const TEXT_ONLY = new Set(["openai", "zhipuai", "flock"]);
@@ -47,7 +47,7 @@ function SkillRow({ skills, offset }: { skills: Skill[]; offset: boolean }) {
             style={{ background: skill.bg }}
           >
             {TEXT_ONLY.has(skill.icon) ? (
-              <span className="text-white text-xs font-bold">
+              <span className="text-white text-xs font-black">
                 {skill.name.length <= 2 ? skill.name.toUpperCase() : skill.name.slice(0, 2).toUpperCase()}
               </span>
             ) : (
@@ -69,7 +69,7 @@ export default function SkillsGrid() {
   return (
     <div className="card h-full flex flex-col" style={{ overflow: "hidden" }}>
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <h3 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
+        <h3 className="text-sm font-black" style={{ color: "var(--text-1)" }}>
           技能 &amp; 工具
         </h3>
       </div>

@@ -69,33 +69,37 @@ export default function TopNav() {
 
   // 路由变化时关闭菜单
   useEffect(() => {
-    setMobileOpen(false);
-    setMoreOpen(false);
-    setAdminMenuOpen(false);
+    const frame = requestAnimationFrame(() => {
+      setMobileOpen(false);
+      setMoreOpen(false);
+      setAdminMenuOpen(false);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [pathname]);
 
   const linkClass = (key: string) =>
-    `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+    `px-4 py-2 text-sm font-black rounded-full transition-all ${
       isActive(key)
-        ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
-        : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
+        ? "text-[var(--text-1)] bg-[var(--island-paper-soft)] shadow-[0_3px_0_var(--island-sand-deep)]"
+        : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--island-paper-soft)] hover:shadow-[0_3px_0_var(--island-sand-deep)]"
     }`;
 
   return (
     <header className="sticky top-0 z-50 w-full">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <nav
-          className="flex items-center justify-between h-14 rounded-xl mt-3 px-4 sm:px-6"
+          className="flex items-center justify-between min-h-14 rounded-full mt-3 px-4 sm:px-5 py-2"
           style={{
-            background: "transparent",
-            border: "none",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
+            background: "var(--card)",
+            border: "3px solid var(--border)",
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
+            boxShadow: "var(--island-shadow-press-small), var(--island-shadow-soft)",
           }}
         >
           {/* Left: Logo */}
           <Link href="/" className="flex-shrink-0">
-            <span className="text-lg font-bold text-[var(--text-1)]">
+            <span className="text-lg font-black text-[var(--text-1)]">
               yechayo
             </span>
           </Link>
@@ -113,10 +117,10 @@ export default function TopNav() {
               <div className="relative" ref={moreRef}>
                 <button
                   onClick={() => setMoreOpen(!moreOpen)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1 ${
+                  className={`px-4 py-2 text-sm font-black rounded-full transition-all flex items-center gap-1 ${
                     moreItems.some((i) => isActive(i.key))
-                      ? "text-[var(--text-1)] bg-[var(--accent-bg)]"
-                      : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
+                      ? "text-[var(--text-1)] bg-[var(--island-paper-soft)] shadow-[0_3px_0_var(--island-sand-deep)]"
+                      : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--island-paper-soft)] hover:shadow-[0_3px_0_var(--island-sand-deep)]"
                   }`}
                 >
                   更多
@@ -132,10 +136,11 @@ export default function TopNav() {
 
                 {moreOpen && (
                   <div
-                    className="absolute top-full left-0 mt-2 rounded-xl p-1.5 shadow-lg min-w-[120px]"
+                    className="absolute top-full left-0 mt-3 rounded-[24px] p-2 min-w-[132px]"
                     style={{
                       background: "var(--card)",
-                      border: "1px solid var(--border)",
+                      border: "3px solid var(--border)",
+                      boxShadow: "var(--island-shadow-press)",
                     }}
                   >
                     {moreItems.map((item) => (
@@ -160,7 +165,7 @@ export default function TopNav() {
           {/* Right: Search + Theme Toggle + Admin */}
           <div className="flex items-center gap-1">
             <button
-              className="p-2 rounded-lg text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)] transition-colors"
+              className="p-2 rounded-full text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)] transition-colors"
               aria-label="搜索"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -174,7 +179,7 @@ export default function TopNav() {
               <div className="relative" ref={adminMenuRef}>
                 <button
                   onClick={() => setAdminMenuOpen(!adminMenuOpen)}
-                  className={`p-2 rounded-lg transition-colors ${
+                  className={`p-2 rounded-full transition-colors ${
                     adminMenuOpen
                       ? "text-[var(--text-1)] bg-[var(--card-hover)]"
                       : "text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)]"
@@ -190,10 +195,11 @@ export default function TopNav() {
                 {/* 下拉菜单 */}
                 {adminMenuOpen && (
                   <div
-                    className="absolute top-full right-0 mt-2 rounded-xl p-1.5 shadow-lg min-w-[140px]"
+                    className="absolute top-full right-0 mt-3 rounded-[24px] p-2 min-w-[150px]"
                     style={{
                       background: "var(--card)",
-                      border: "1px solid var(--border)",
+                      border: "3px solid var(--border)",
+                      boxShadow: "var(--island-shadow-press)",
                     }}
                   >
                     <Link
@@ -223,7 +229,7 @@ export default function TopNav() {
 
             {/* Mobile hamburger */}
             <button
-              className="md:hidden p-2 rounded-lg text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)] transition-colors ml-1"
+              className="md:hidden p-2 rounded-full text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--card-hover)] transition-colors ml-1"
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="菜单"
             >
@@ -243,10 +249,11 @@ export default function TopNav() {
         {/* Mobile Navigation Menu */}
         {mobileOpen && (
           <div
-            className="md:hidden mt-2 rounded-xl p-2 shadow-lg"
+            className="md:hidden mt-3 rounded-[24px] p-2"
             style={{
               background: "var(--card)",
-              border: "1px solid var(--border)",
+              border: "3px solid var(--border)",
+              boxShadow: "var(--island-shadow-press)",
             }}
           >
             {navItems.map((item) => (

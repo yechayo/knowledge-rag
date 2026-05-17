@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/app/providers";
 import ChatWrapper from "@/components/chat/ChatWrapper";
-import CustomCursor from "@/components/layout/CustomCursor";
+import NativeCursor from "@/components/layout/NativeCursor";
 
 export const metadata: Metadata = {
   title: "Personal Site",
@@ -18,7 +18,7 @@ export default function RootLayout({
     <html lang="zh-CN" suppressHydrationWarning>
       <body className="antialiased">
         <Providers>
-          <CustomCursor />
+          <NativeCursor />
           {children}
           <ChatWrapper />
         </Providers>

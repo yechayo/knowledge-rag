@@ -40,57 +40,61 @@ export default function ProjectsShowcase() {
   }, []);
 
   const rotations = [-3, 2, -2];
+  const colors = ["var(--island-teal)", "var(--island-blue)", "var(--island-orange)"];
+  const shadows = ["var(--island-teal-deep)", "#6677c8", "#c46f47"];
 
   // 加载完成后，如果没有项目也不隐藏卡片，保持占位
   return (
     <div className="card h-full flex items-center justify-center p-6">
       {projects.length > 0 ? (
-        <div className="flex items-center justify-center gap-5 w-full">
+        <div className="flex items-center justify-center gap-5 w-full max-[640px]:flex-col">
           {projects.map((project, i) => (
             <a
               key={project.id}
               href={project.href}
-              className="project-tilted flex-1 max-w-[200px] flex flex-col items-center justify-center p-5 rounded-xl transition-all duration-300 group"
+              className="project-tilted flex-1 max-w-[200px] min-h-[154px] flex flex-col items-center justify-center p-5 rounded-[28px] transition-all duration-300 group max-[640px]:max-w-full max-[640px]:w-full"
               style={{
-                background: "var(--accent-bg)",
-                border: "1px solid var(--border)",
+                background: colors[i % colors.length],
+                border: "2px solid rgba(255,255,255,0.45)",
+                boxShadow: `0 6px 0 ${shadows[i % shadows.length]}`,
                 transform: `rotate(${rotations[i]}deg)`,
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = "rotate(0deg) translateY(-6px) scale(1.03)";
-                e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)";
-                e.currentTarget.style.boxShadow = "0 8px 30px rgba(99,102,241,0.1)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.75)";
+                e.currentTarget.style.boxShadow = `0 10px 0 ${shadows[i % shadows.length]}, 0 18px 32px rgba(61,52,40,0.16)`;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = `rotate(${rotations[i]}deg)`;
-                e.currentTarget.style.borderColor = "var(--border)";
-                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)";
+                e.currentTarget.style.boxShadow = `0 6px 0 ${shadows[i % shadows.length]}`;
               }}
             >
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold mb-3 transition-colors duration-300"
+                className="w-14 h-14 rounded-[20px] flex items-center justify-center text-sm font-black mb-3 transition-colors duration-300"
                 style={{
-                  background: "var(--accent)",
+                  background: "rgba(255,255,255,0.24)",
+                  border: "2px solid rgba(255,255,255,0.45)",
                   color: "white",
                 }}
               >
                 {project.icon}
               </div>
               <span
-                className="text-sm font-semibold text-center"
-                style={{ color: "var(--text-1)" }}
+                className="text-sm font-black text-center"
+                style={{ color: "white" }}
               >
                 {project.title}
               </span>
               {project.description && (
                 <span
                   className="text-xs text-center mt-1 line-clamp-2"
-                  style={{ color: "var(--text-3)" }}
+                  style={{ color: "rgba(255,255,255,0.84)" }}
                 >
                   {project.description}
                 </span>
               )}
-              <span className="text-xs mt-2" style={{ color: "var(--text-3)" }}>
+              <span className="text-xs mt-2 font-bold" style={{ color: "rgba(255,255,255,0.82)" }}>
                 {project.viewCount} 次浏览
               </span>
             </a>

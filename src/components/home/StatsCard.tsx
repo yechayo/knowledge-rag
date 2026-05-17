@@ -20,7 +20,7 @@ function StatCountUp({ value, label }: { value: number; label: string }) {
 
   useEffect(() => {
     if (!Number.isFinite(value) || value < 0) {
-      setCount(0);
+      rafRef.current = requestAnimationFrame(() => setCount(0));
       return;
     }
 
@@ -48,14 +48,20 @@ function StatCountUp({ value, label }: { value: number; label: string }) {
   }, [value]);
 
   return (
-    <div className="text-center py-2">
+    <div
+      className="text-center py-2 rounded-[24px] grid place-items-center"
+      style={{
+        background: "var(--island-paper-soft)",
+        border: "2px dashed #dfd0b4",
+      }}
+    >
       <span
-        className="text-2xl font-bold tabular-nums"
+        className="text-2xl font-black tabular-nums"
         style={{ color: "var(--text-1)" }}
       >
         {count}
       </span>
-      <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>
+      <p className="text-xs mt-1 font-bold" style={{ color: "var(--text-3)" }}>
         {label}
       </p>
     </div>
@@ -101,7 +107,7 @@ export default function StatsCard() {
 
   return (
     <div className="card h-full flex flex-col justify-center">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3 h-full">
         {stats.map((stat) => (
           <StatCountUp key={stat.label} value={stat.value} label={stat.label} />
         ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import TopNav from "@/components/layout/TopNav";
 import AnimatedWrapper from "@/components/ui/AnimatedWrapper";
 import ProfileCard from "@/components/home/ProfileCard";
@@ -69,7 +70,7 @@ export default function HomePage() {
         </div>
         <footer className="foot">
           <span>&copy; 2026 MySpace</span>
-          <a href="/login">管理</a>
+          <Link href="/login">管理</Link>
         </footer>
       </div>
     </div>
