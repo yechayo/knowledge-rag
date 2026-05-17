@@ -134,6 +134,7 @@ export default function DetailPage() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [showTopBtn, setShowTopBtn] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const { categories: allCategories, categoryLabels } = useCategories();
 
   const jumpJobRef = useRef<number | null>(null);
@@ -166,6 +167,32 @@ export default function DetailPage() {
 
     run();
   }, [searchParams]);
+
+  // Dynamic bottom padding on <main> so the last heading can scroll to viewport top,
+  // enabling TOC scroll-spy to correctly highlight the last item.
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+
+    const recalculate = () => {
+      const headings = main.querySelectorAll<HTMLElement>(".markdown-content h2, .markdown-content h3");
+      if (headings.length === 0) {
+        main.style.paddingBottom = "";
+        return;
+      }
+      const lastHeading = headings[headings.length - 1];
+      const rect = lastHeading.getBoundingClientRect();
+      const distanceToBottom =
+        document.documentElement.scrollHeight - (window.scrollY + rect.top) - rect.height;
+      const needed = window.innerHeight - 80 - rect.height;
+      const padding = Math.max(0, needed - distanceToBottom);
+      main.style.paddingBottom = padding > 0 ? `${padding}px` : "";
+    };
+
+    recalculate();
+    window.addEventListener("resize", recalculate);
+    return () => window.removeEventListener("resize", recalculate);
+  });
 
   // 获取文章内容
   useEffect(() => {
@@ -412,7 +439,7 @@ export default function DetailPage() {
           <Sidebar body={content.body} category={content.category} currentSlug={content.slug} />
 
           {/* Main Content */}
-          <main className="flex-1 min-w-0">
+          <main ref={mainRef} className="flex-1 min-w-0">
             {/* Banner */}
             <div className="rounded-2xl overflow-hidden mb-6" style={{ border: "1px solid var(--border)" }}>
               {/* Cover Image */}
