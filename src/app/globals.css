@@ -89,7 +89,7 @@ body {
   transition: background 0.3s, color 0.3s;
   font-size: 17px;
   letter-spacing: 0;
-  cursor: auto;
+  cursor: url('/cursor-icon.png') 4 0, auto;
 }
 
 a,
@@ -98,7 +98,7 @@ summary,
 label,
 [role="button"],
 [role="link"] {
-  cursor: pointer;
+  cursor: url('/cursor-icon.png') 4 0, pointer;
 }
 
 input,

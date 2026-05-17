@@ -65,6 +65,9 @@ importers:
       ali-oss:
         specifier: ^6.23.0
         version: 6.23.0
+      animal-island-ui:
+        specifier: ^0.9.1
+        version: 0.9.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -408,6 +411,15 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+
+  '@fontsource/noto-sans-sc@5.2.9':
+    resolution: {integrity: sha512-bTUIWGBgJDpwi5qAr+x0/lcgv80IHTB9vl6s2f6EymZEa7qYV99yNRBZuKFT+SYDKVunZrjCEhWtpxqmbXWl5Q==}
+
+  '@fontsource/nunito@5.2.7':
+    resolution: {integrity: sha512-pmtBq0H9ex9nk+RtJYEJOD9pag393iHETnl/PVKleF4i06cd0ttngK5ZCTgYb5eOqR3Xdlrjtev8m7bmgYprew==}
+
+  '@fontsource/zen-maru-gothic@5.2.8':
+    resolution: {integrity: sha512-6RkH33+rgEJy1hkUdDAf+3PyQ7oUjX3vj7cekmfx/bT/9BEPd07FqrjcGBQDe4uWmUebEKuIZep3phDjsnJ6vA==}
 
   '@hono/node-server@1.19.9':
     resolution: {integrity: sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw==}
@@ -1558,6 +1570,12 @@ packages:
     resolution: {integrity: sha512-FipRmyd16Pr/tEey/YaaQ/24Pc3HEpLM9S1DRakEuXlSLXNIJnu1oJtHM53eVYpvW3dXapSjrip3xylZUTIZVQ==}
     engines: {node: '>=8'}
 
+  animal-island-ui@0.9.1:
+    resolution: {integrity: sha512-AdAlbDTtkm0tnfZNdNyuKBbsQMsbB3PkYiPqhz8Eb/ts5mtL6rJ4VIDpT+/YC/UKFJQP3MBhBR8eKltcaI3/GA==}
+    peerDependencies:
+      react: '>=17.0.0'
+      react-dom: '>=17.0.0'
+
   ansi-styles@4.3.0:
     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
     engines: {node: '>=8'}
@@ -1748,6 +1766,9 @@ packages:
 
   citty@0.2.1:
     resolution: {integrity: sha512-kEV95lFBhQgtogAPlQfJJ0WGVSokvLr/UEoFPiKKOXF7pl98HfUVUD0ejsuTCld/9xH9vogSywZ5KqHzXrZpqg==}
+
+  classnames@2.5.1:
+    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
 
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
@@ -4446,6 +4467,12 @@ snapshots:
   '@floating-ui/utils@0.2.11':
     optional: true
 
+  '@fontsource/noto-sans-sc@5.2.9': {}
+
+  '@fontsource/nunito@5.2.7': {}
+
+  '@fontsource/zen-maru-gothic@5.2.8': {}
+
   '@hono/node-server@1.19.9(hono@4.11.4)':
     dependencies:
       hono: 4.11.4
@@ -5519,6 +5546,15 @@ snapshots:
       - proxy-agent
       - supports-color
 
+  animal-island-ui@0.9.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
+    dependencies:
+      '@fontsource/noto-sans-sc': 5.2.9
+      '@fontsource/nunito': 5.2.7
+      '@fontsource/zen-maru-gothic': 5.2.8
+      classnames: 2.5.1
+      react: 19.2.3
+      react-dom: 19.2.3(react@19.2.3)
+
   ansi-styles@4.3.0:
     dependencies:
       color-convert: 2.0.1
@@ -5744,6 +5780,8 @@ snapshots:
       consola: 3.4.2
 
   citty@0.2.1: {}
+
+  classnames@2.5.1: {}
 
   client-only@0.0.1: {}
 
