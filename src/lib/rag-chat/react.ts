@@ -8,21 +8,33 @@ import type { QueryEngine } from "@/lib/agent/chat/queryEngine";
 import type { SSESender } from "@/lib/agent/stream/sse";
 import { createDeepSeekChatModel } from "./deepseek";
 import { searchKnowledgeBase } from "./retrieve";
+import type { RagChatRoute } from "./types";
 import type { SourceCitation } from "./types";
 
-export async function runRagReactAnswer(input: {
-  messages: BaseMessage[];
+type RagAgentMode = Exclude<RagChatRoute, "direct">;
+
+interface RagAgentModeConfig {
   systemPrompt: string;
+  maxTurns: number;
+  maxTotalCalls: number;
+  maxPerTool: number;
+  recursionLimit: number;
+}
+
+export async function runRagReactAnswer(input: {
+  mode: RagAgentMode;
+  messages: BaseMessage[];
   engine: QueryEngine;
   signal: AbortSignal;
   send: SSESender;
 }): Promise<{ answer: string; sources: SourceCitation[] }> {
-  const limits = { ...DEFAULT_RESOURCE_LIMITS, maxTurns: 8 };
+  const config = getRagAgentModeConfig(input.mode);
+  const limits = { ...DEFAULT_RESOURCE_LIMITS, maxTurns: config.maxTurns };
   const guard = new LoopGuard({
-    maxTurns: limits.maxTurns,
+    maxTurns: config.maxTurns,
     tokenBudget: limits.tokenBudget,
-    maxTotalCalls: 8,
-    maxPerTool: 5,
+    maxTotalCalls: config.maxTotalCalls,
+    maxPerTool: config.maxPerTool,
   });
   const searchTool = tool(
     async ({ query }: { query: string }) => {
@@ -42,17 +54,48 @@ export async function runRagReactAnswer(input: {
     inputMessages: input.messages,
     guardedTools: [searchTool, ...tools],
     rawTools: [searchTool, ...rawTools],
-    systemPrompt: input.systemPrompt,
+    systemPrompt: config.systemPrompt,
     llm: createDeepSeekChatModel({ temperature: 0.3, maxTokens: 4000 }),
     engine: input.engine,
     guard,
     signal: input.signal,
     send: input.send,
-    recursionLimit: 10,
+    recursionLimit: config.recursionLimit,
   });
   return {
     answer: result.finalText,
     sources: extractSourcesFromToolResults(result.toolResults),
+  };
+}
+
+export function getRagAgentModeConfig(mode: RagAgentMode): RagAgentModeConfig {
+  if (mode === "retrieve_once") {
+    return {
+      systemPrompt: [
+        "你是知识库问答助手。",
+        "回答前必须先调用 search_knowledge_base 检索相关内容。",
+        "默认一次检索后直接回答；只有首轮结果不足时，才允许改写问题再补充检索一次。",
+        "回答只能依据工具返回的知识库内容，并使用 [[REF:/category/slug#anchor|短标签]] 引用。",
+        "不要编造链接、slug、anchor 或未检索到的事实；如果工具结果不足，直接说明“知识库中暂无相关内容”。",
+      ].join(" "),
+      maxTurns: 4,
+      maxTotalCalls: 3,
+      maxPerTool: 2,
+      recursionLimit: 6,
+    };
+  }
+
+  return {
+    systemPrompt: [
+      "你是知识库 ReAct 助手。",
+      "复杂问题应先拆解，再多轮调用 search_knowledge_base 检索不同角度的信息，最后汇总回答。",
+      "回答只能依据工具返回的知识库内容，并使用 [[REF:/category/slug#anchor|短标签]] 引用。",
+      "不要编造链接、slug、anchor 或未检索到的事实；如果工具结果不足，直接说明“知识库中暂无相关内容”。",
+    ].join(" "),
+    maxTurns: 8,
+    maxTotalCalls: 8,
+    maxPerTool: 5,
+    recursionLimit: 10,
   };
 }
 

@@ -35,12 +35,66 @@ export async function retrieveGrouped(
 ): Promise<GroupedResult> {
   const queryEmbedding = await generateEmbedding(query);
   const embeddingStr = vectorToPostgresFormat(queryEmbedding);
+  const keywordNeedle = buildKeywordNeedle(query);
   const mergedLimits = { ...DEFAULT_LIMITS, ...limits };
   const groups = emptyGroupedResult();
 
   await Promise.all((Object.keys(DEFAULT_LIMITS) as Array<keyof GroupedResult>).map(async (chunkType) => {
     const limit = mergedLimits[chunkType];
-    const rows = await prisma.$queryRaw<ChunkRow[]>`
+    const [vectorRows, keywordRows] = await Promise.all([
+      retrieveVectorRows(embeddingStr, chunkType, limit),
+      keywordNeedle ? retrieveKeywordRows(keywordNeedle, chunkType, limit) : Promise.resolve([]),
+    ]);
+    groups[chunkType] = mergeHybridRows(vectorRows, keywordRows, limit).map(formatRow);
+  }));
+
+  return groups;
+}
+
+async function retrieveVectorRows(
+  embeddingStr: string,
+  chunkType: keyof GroupedResult,
+  limit: number
+): Promise<ChunkRow[]> {
+  return prisma.$queryRaw<ChunkRow[]>`
+    SELECT
+      c.id,
+      c."contentId",
+      co.title,
+      co.slug,
+      co.category,
+      c.content,
+      1 - (c.embedding <=> ${embeddingStr}::vector(256)) AS score,
+      c."chunkType",
+      c."headingLevel",
+      c."headingAnchor",
+      c."headingText",
+      c."sectionPath",
+      c."sourceTitle",
+      c."sourceSlug",
+      c."sourceCategory",
+      c."sourceTags"
+    FROM "Chunk" c
+    JOIN "Content" co ON c."contentId" = co.id
+    WHERE co.status = 'published'
+      AND c.embedding IS NOT NULL
+      AND c."chunkType" = ${chunkType}
+    ORDER BY c.embedding <=> ${embeddingStr}::vector(256) ASC
+    LIMIT ${limit}
+  `;
+}
+
+async function retrieveKeywordRows(
+  keywordNeedle: string,
+  chunkType: keyof GroupedResult,
+  limit: number
+): Promise<ChunkRow[]> {
+  return prisma.$queryRaw<ChunkRow[]>`
+    WITH keyword_terms AS (
+      SELECT lower(term) AS term
+      FROM regexp_split_to_table(${keywordNeedle}, '[[:space:]]+') AS term
+      WHERE length(trim(term)) >= 2
+    )
       SELECT
         c.id,
         c."contentId",
@@ -48,7 +102,15 @@ export async function retrieveGrouped(
         co.slug,
         co.category,
         c.content,
-        1 - (c.embedding <=> ${embeddingStr}::vector(256)) AS score,
+        (
+          SELECT COALESCE(SUM(
+            CASE WHEN lower(co.title) LIKE '%' || term || '%' THEN 0.45 ELSE 0 END +
+            CASE WHEN lower(COALESCE(c."headingText", '')) LIKE '%' || term || '%' THEN 0.25 ELSE 0 END +
+            CASE WHEN lower(COALESCE(c."sectionPath", '')) LIKE '%' || term || '%' THEN 0.2 ELSE 0 END +
+            CASE WHEN lower(c.content) LIKE '%' || term || '%' THEN 0.1 ELSE 0 END
+          ), 0)
+          FROM keyword_terms
+        ) AS score,
         c."chunkType",
         c."headingLevel",
         c."headingAnchor",
@@ -61,15 +123,18 @@ export async function retrieveGrouped(
       FROM "Chunk" c
       JOIN "Content" co ON c."contentId" = co.id
       WHERE co.status = 'published'
-        AND c.embedding IS NOT NULL
         AND c."chunkType" = ${chunkType}
-      ORDER BY c.embedding <=> ${embeddingStr}::vector(256) ASC
+        AND EXISTS (
+          SELECT 1
+          FROM keyword_terms
+          WHERE lower(co.title) LIKE '%' || term || '%'
+             OR lower(COALESCE(c."headingText", '')) LIKE '%' || term || '%'
+             OR lower(COALESCE(c."sectionPath", '')) LIKE '%' || term || '%'
+             OR lower(c.content) LIKE '%' || term || '%'
+        )
+      ORDER BY score DESC, c."createdAt" DESC
       LIMIT ${limit}
-    `;
-    groups[chunkType] = rows.map(formatRow);
-  }));
-
-  return groups;
+  `;
 }
 
 export function emptyGroupedResult(): GroupedResult {
@@ -136,6 +201,41 @@ export async function searchKnowledgeBase(query: string): Promise<string> {
     context: buildKnowledgeBaseContext(grouped),
     sources,
   });
+}
+
+function mergeHybridRows(vectorRows: ChunkRow[], keywordRows: ChunkRow[], limit: number): ChunkRow[] {
+  const merged: ChunkRow[] = [];
+  const seen = new Set<string>();
+  const maxLength = Math.max(vectorRows.length, keywordRows.length);
+
+  for (let index = 0; index < maxLength && merged.length < limit; index += 1) {
+    addRow(vectorRows[index], merged, seen);
+    if (merged.length >= limit) break;
+    addRow(keywordRows[index], merged, seen);
+  }
+
+  return merged;
+}
+
+function addRow(row: ChunkRow | undefined, rows: ChunkRow[], seen: Set<string>) {
+  if (!row || seen.has(row.id)) return;
+  seen.add(row.id);
+  rows.push(row);
+}
+
+function buildKeywordNeedle(query: string): string {
+  const normalized = query
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .trim();
+  if (!normalized) return "";
+
+  const terms = new Set<string>();
+  for (const part of normalized.split(/\s+/)) {
+    if (part.length >= 2) terms.add(part);
+  }
+
+  return Array.from(terms).slice(0, 8).join(" ");
 }
 
 function formatRow(row: ChunkRow): GroupedChunk {

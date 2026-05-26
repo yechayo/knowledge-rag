@@ -118,7 +118,6 @@ describe("POST /api/chat", () => {
   });
 
   it("runs one retrieval for retrieve_once route and emits sources", async () => {
-    const grouped = { content_body: [] };
     const sources = [{ title: "A", slug: "a", category: "article", contentPreview: "A" }];
     mocks.classifyChatIntent.mockResolvedValue({
       route: "retrieve_once",
@@ -126,20 +125,21 @@ describe("POST /api/chat", () => {
       reason: "knowledge",
       normalizedQuery: "项目",
     });
-    mocks.retrieveGrouped.mockResolvedValue(grouped);
-    mocks.extractSources.mockReturnValue(sources);
-    mocks.streamRetrievedAnswer.mockImplementation(async (_query, _grouped, _sources, send) => {
+    mocks.runRagReactAnswer.mockImplementation(async ({ send }) => {
       send("delta", { content: "答案" });
-      return "答案";
+      return { answer: "答案", sources };
     });
 
     const response = await POST(request("知识库里有哪些项目？"));
     const eventTypes = await readSseTypes(response);
 
-    expect(mocks.retrieveGrouped).toHaveBeenCalledWith("项目");
-    expect(mocks.streamRetrievedAnswer).toHaveBeenCalledWith("知识库里有哪些项目？", grouped, sources, expect.any(Function), expect.any(Object));
+    expect(mocks.retrieveGrouped).not.toHaveBeenCalled();
+    expect(mocks.streamRetrievedAnswer).not.toHaveBeenCalled();
+    expect(mocks.runRagReactAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "retrieve_once",
+    }));
     expect(eventTypes).toEqual(["init", "route", "delta", "sources", "done"]);
-    expect(mocks.createQueryEngine).not.toHaveBeenCalled();
+    expect(mocks.createQueryEngine).toHaveBeenCalledWith("chat-1", "anonymous", "chat", expect.any(Object));
   });
 
   it("runs ReAct route and emits sources returned from search tool results", async () => {
@@ -159,7 +159,10 @@ describe("POST /api/chat", () => {
     const eventTypes = await readSseTypes(response);
 
     expect(mocks.retrieveGrouped).not.toHaveBeenCalled();
-    expect(mocks.runRagReactAnswer).toHaveBeenCalled();
+    expect(mocks.runRagReactAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "react_retrieve",
+    }));
+    expect(mocks.createQueryEngine).toHaveBeenCalledWith("chat-1", "anonymous", "chat", expect.any(Object));
     expect(eventTypes).toEqual(["init", "route", "delta", "sources", "done"]);
   });
 });

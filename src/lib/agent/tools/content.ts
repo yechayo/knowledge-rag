@@ -86,7 +86,7 @@ export const listContent = tool(
     if (category && category.trim() !== "") {
       where.category = category;
     }
-    if (status) {
+    if (status && status.trim() !== "") {
       where.status = status;
     }
 
@@ -114,10 +114,10 @@ export const listContent = tool(
   },
   {
     name: "list_content",
-    description: "查询内容列表。如果不传 category，则返回所有分类的内容。",
+    description: "查询内容列表。不传任何参数时返回所有分类、所有状态的内容。只有明确需要过滤时才传 category 或 status 参数。",
     schema: z.object({
       category: z.string().optional().describe("内容分类，不传则返回所有分类"),
-      status: z.string().optional().describe("状态过滤"),
+      status: z.string().optional().describe("状态过滤，不传则返回所有状态（draft/published/unpublished）"),
       limit: z.coerce.number().optional().describe("返回数量，默认 100"),
     }),
   }

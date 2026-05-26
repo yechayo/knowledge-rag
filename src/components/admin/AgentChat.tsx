@@ -4,27 +4,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ModelSelector, { type ModelConfig } from "@/components/admin/ModelSelector";
 import SkillApprovalModal from "./SkillApprovalModal";
-
-export interface ToolCallBlock {
-  id: string;
-  name: string;
-  status: "pending" | "running" | "done" | "error";
-  input: Record<string, unknown>;
-  result?: string;
-}
-
-export interface AgentMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  /** 思考内容数组，每轮一次思考 */
-  thinking?: string[];
-  thinkingComplete?: boolean;
-  toolCalls: ToolCallBlock[];
-  isComplete: boolean;
-  error?: string;
-  timestamp: number;
-}
+import {
+  createAssistantChatMessage,
+  reduceAssistantStreamEvent,
+  type ChatMessage,
+  type UserChatMessage,
+} from "@/components/chat/chatState";
 
 interface SkillInfo {
   name: string;
@@ -33,7 +18,7 @@ interface SkillInfo {
 }
 
 export default function AgentChat() {
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentAssistantId, setCurrentAssistantId] = useState<string | null>(null);
@@ -49,8 +34,6 @@ export default function AgentChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const thinkingDoneRef = useRef<{ [assistantId: string]: boolean }>({});
-  const toolIdCounterRef = useRef(0);
   const skillMenuRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
 
@@ -106,6 +89,17 @@ export default function AgentChat() {
     setShowSkillMenu(false);
   }, [isLoading]);
 
+  const applyAssistantEvent = useCallback((assistantId: string, event: { type: string; data?: unknown }) => {
+    setMessages((prev) =>
+      prev.map((message) => {
+        if (message.role !== "assistant" || message.id !== assistantId) {
+          return message;
+        }
+        return reduceAssistantStreamEvent(message, event);
+      })
+    );
+  }, []);
+
   const handleSend = useCallback(async () => {
     let content = input.trim();
     if (!content || isLoading) return;
@@ -130,11 +124,10 @@ export default function AgentChat() {
     setIsLoading(true);
     setSlashMenuOpen(false);
 
-    const userMsg: AgentMessage = {
+    const userMsg: UserChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: explicitSkill ? `/${explicitSkill} ${content}`.trim() : content,
-      toolCalls: [],
       isComplete: true,
       timestamp: Date.now(),
     };
@@ -142,14 +135,8 @@ export default function AgentChat() {
 
     const assistantId = `assistant-${Date.now()}`;
     setCurrentAssistantId(assistantId);
-    const assistantMsg: AgentMessage = {
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      thinking: [],
-      thinkingComplete: false,
-      toolCalls: [],
-      isComplete: false,
+    const assistantMsg = {
+      ...createAssistantChatMessage(assistantId),
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, assistantMsg]);
@@ -171,16 +158,15 @@ export default function AgentChat() {
       });
 
       if (!res.ok) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, isComplete: true, error: "请求失败" } : m
-          )
-        );
+        applyAssistantEvent(assistantId, {
+          type: "error",
+          data: { message: "请求失败" },
+        });
         return;
       }
 
       const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder("utf-8");
       let buffer = "";
 
       while (true) {
@@ -219,97 +205,8 @@ export default function AgentChat() {
             if (data.type === "init") {
               if (data.data?.sessionKey) setSessionKey(data.data.sessionKey);
               if (data.data?.activeSkill) setActiveSkill(data.data.activeSkill);
-            } else if (data.type === "delta") {
-              // 第一个 delta 到达时标记 thinking 完成
-              if (!thinkingDoneRef.current[assistantId]) {
-                thinkingDoneRef.current[assistantId] = true;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId ? { ...m, thinkingComplete: true } : m
-                  )
-                );
-              }
-
-              const chunk = data.data?.content || "";
-              if (!chunk) continue;
-
-              // 直接追加到 content，React 18+ 的自动批处理会自然合并高频更新
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: m.content + chunk }
-                    : m
-                )
-              );
-            } else if (data.type === "thinking") {
-              const content = data.data?.content || "";
-              if (!content) continue;
-              const round = data.data?.round as number | undefined;
-              setMessages((prev) =>
-                prev.map((m) => {
-                  if (m.id !== assistantId) return m;
-                  const blocks = [...(m.thinking || [])];
-                  // round 是新轮次则 push 新块，否则追加到最后一块
-                  if (round !== undefined && round > blocks.length) {
-                    blocks.push(content);
-                  } else if (blocks.length > 0) {
-                    blocks[blocks.length - 1] += content;
-                  } else {
-                    blocks.push(content);
-                  }
-                  return { ...m, thinking: blocks };
-                })
-              );
-            } else if (data.type === "tool_start") {
-              const toolBlock: ToolCallBlock = {
-                id: `tool-${++toolIdCounterRef.current}`,
-                name: data.data?.toolName || "unknown",
-                status: "running",
-                input: JSON.parse(data.data?.arguments || "{}"),
-              };
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, toolCalls: [...m.toolCalls, toolBlock] }
-                    : m
-                )
-              );
-            } else if (data.type === "tool_end") {
-              setMessages((prev) =>
-                prev.map((m) => {
-                  if (m.id !== assistantId) return m;
-                  const toolIndex = m.toolCalls.findIndex((tc) => tc.status === "running");
-                  if (toolIndex === -1) return m;
-                  const newToolCalls = [...m.toolCalls];
-                  newToolCalls[toolIndex] = {
-                    ...newToolCalls[toolIndex],
-                    status: data.data?.success !== false ? "done" : "error",
-                    result:
-                      typeof data.data?.result === "string"
-                        ? data.data.result
-                        : JSON.stringify(data.data?.result),
-                  };
-                  return { ...m, toolCalls: newToolCalls };
-                })
-              );
-            } else if (data.type === "done") {
-              // 流结束，标记消息完成
-              setMessages((prev) =>
-                prev.map((m) => m.id === assistantId
-                  ? { ...m, thinkingComplete: true, isComplete: true }
-                  : m)
-              );
-            } else if (data.type === "error") {
-              const errorMsg = typeof data.data === "string"
-                ? data.data
-                : data.data?.message || "Unknown error";
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, thinkingComplete: true, isComplete: true, error: errorMsg }
-                    : m
-                )
-              );
+            } else {
+              applyAssistantEvent(assistantId, data);
             }
           } catch (parseError) {
             console.warn("[AgentChat] Failed to parse SSE data:", parseError);
@@ -318,24 +215,21 @@ export default function AgentChat() {
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, isComplete: true, error: "请求已取消" } : m
-          )
-        );
+        applyAssistantEvent(assistantId, {
+          type: "error",
+          data: { message: "请求已取消" },
+        });
       } else {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, isComplete: true, error: "连接失败" } : m
-          )
-        );
+        applyAssistantEvent(assistantId, {
+          type: "error",
+          data: { message: "连接失败" },
+        });
       }
     } finally {
-      thinkingDoneRef.current[assistantId] = false;
       setIsLoading(false);
       setCurrentAssistantId(null);
     }
-  }, [input, isLoading, sessionKey, activeSkill, skills, modelConfig]);
+  }, [input, isLoading, sessionKey, activeSkill, skills, modelConfig, applyAssistantEvent]);
 
   const startNewSession = useCallback(() => {
     if (isLoading) {

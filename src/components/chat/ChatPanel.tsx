@@ -1,174 +1,21 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-
-interface Source {
-  title: string;
-  slug: string;
-  category: string;
-  headingAnchor?: string | null;
-  headingText?: string | null;
-  sectionPath?: string | null;
-  contentPreview: string;
-}
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  sources?: Source[];
-}
+import MessageBubble from "./MessageBubble";
+import {
+  createAssistantChatMessage,
+  reduceAssistantStreamEvent,
+  type ChatMessage,
+  type UserChatMessage,
+} from "./chatState";
 
 interface ChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-/** 内联引用标记，点击直接跳转来源 */
-function InlineRef({
-  href,
-  label,
-  refText,
-}: {
-  href: string;
-  label: string;
-  refText?: string;
-}) {
-  const buildJumpHref = () => {
-    try {
-      const url = new URL(href, window.location.origin);
-      const candidateRef = (refText || label || "").trim().replace(/\.{2,}|…/g, "");
-      if (candidateRef && !url.searchParams.has("ref")) {
-        url.searchParams.set("ref", candidateRef.slice(0, 140));
-      }
-      return `${url.pathname}${url.search}${url.hash}`;
-    } catch {
-      return href;
-    }
-  };
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    window.location.href = buildJumpHref();
-  };
-
-  return (
-    <a
-      href={href}
-      className="inline-block align-middle mx-0.5 px-2 py-0.5 rounded-full cursor-pointer text-[var(--accent)] bg-[var(--accent-bg)] opacity-90 hover:opacity-100 text-xs leading-none font-black no-underline"
-      title={label}
-      onClick={handleClick}
-    >
-      {label}
-    </a>
-  );
-}
-
-/** 解析 [[REF:/path/to/article#anchor|缩写内容]] 或 [[REF:/path/to/article#anchor]] 格式的内联引用 */
-function parseInlineRefs(content: string, sources?: Source[]): React.ReactNode[] {
-  const refPattern = /\[\[REF:([^|\]]+?)(?:\|([^\]]+))?\]\]/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-
-  const resolveRefText = (href: string, label: string) => {
-    if (!sources || sources.length === 0) return label;
-
-    try {
-      const url = new URL(href, window.location.origin);
-      const pathname = decodeURIComponent(url.pathname).replace(/\/+$/, "");
-      const hashAnchor = decodeURIComponent(url.hash.replace(/^#/, ""));
-
-      const matched = sources.find((s) => {
-        const sourcePath = decodeURIComponent(`/${s.category}/${s.slug}`).replace(/\/+$/, "");
-        if (sourcePath !== pathname) return false;
-        if (!hashAnchor) return true;
-        return (s.headingAnchor || "").trim() === hashAnchor;
-      });
-
-      if (matched?.contentPreview) return matched.contentPreview;
-      if (matched?.headingText) return matched.headingText;
-      if (matched?.sectionPath) return matched.sectionPath;
-
-      const loose = sources.find((s) => pathname.includes(`/${s.slug}`));
-      if (loose?.contentPreview) return loose.contentPreview;
-    } catch {
-      // ignore
-    }
-
-    return label;
-  };
-
-  while ((match = refPattern.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(
-        <MarkdownText key={`text-${lastIndex}`} text={content.slice(lastIndex, match.index)} />
-      );
-    }
-
-    const href = match[1];
-    // label 可选，缺失时从 anchor 或 slug 中提取显示文本
-    const rawLabel = match[2];
-    const fallback = href.includes('#') ? href.split('#').pop()! : href.split('/').pop()!;
-    const label = rawLabel || fallback || href;
-
-    parts.push(
-      <InlineRef
-        key={`ref-${match.index}`}
-        href={href}
-        label={label}
-        refText={resolveRefText(href, label)}
-      />
-    );
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < content.length) {
-    parts.push(<MarkdownText key={`text-${lastIndex}`} text={content.slice(lastIndex)} />);
-  }
-
-  return parts.length > 0 ? parts : [<MarkdownText key="plain" text={content} />];
-}
-
-/** 纯文本片段的 Markdown 渲染（bold、code、code block） */
-function MarkdownText({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|```[\s\S]*?```)/g);
-
-  return (
-    <span className="whitespace-pre-wrap">
-      {parts.map((part, i) => {
-        if (part.startsWith("```") && part.endsWith("```")) {
-          const code = part.slice(3, -3).replace(/^\w+\n/, "");
-          return (
-            <code key={i} className="block rounded-[14px] bg-[var(--bg)] px-2 py-1 text-xs my-1">
-              {code}
-            </code>
-          );
-        }
-        if (part.startsWith("**") && part.endsWith("**")) {
-          return <strong key={i}>{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith("`") && part.endsWith("`")) {
-          return (
-            <code key={i} className="rounded-full bg-[var(--bg)] px-1.5 py-0.5 text-xs">
-              {part.slice(1, -1)}
-            </code>
-          );
-        }
-        return <span key={i}>{part}</span>;
-      })}
-    </span>
-  );
-}
-
-/** 消息内容渲染：支持内联引用和 Markdown */
-function RichMessageContent({ content, sources }: { content: string; sources?: Source[] }) {
-  return <span className="whitespace-pre-wrap">{parseInlineRefs(content, sources)}</span>;
-}
-
 export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -189,18 +36,33 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
     }
   }, [isOpen]);
 
+  const applyAssistantEvent = useCallback((assistantId: string, event: { type: string; data?: unknown }) => {
+    setMessages((prev) =>
+      prev.map((message) => {
+        if (message.role !== "assistant" || message.id !== assistantId) {
+          return message;
+        }
+        return reduceAssistantStreamEvent(message, event);
+      })
+    );
+  }, []);
+
   const sendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
-    const userMessage: Message = { role: "user", content: trimmed };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    const userMessage: UserChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+      isComplete: true,
+    };
+    const assistantId = `assistant-${Date.now()}`;
+    const assistantMessage = createAssistantChatMessage(assistantId);
+
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setInput("");
     setIsLoading(true);
-
-    const assistantMessage: Message = { role: "assistant", content: "" };
-    setMessages([...newMessages, assistantMessage]);
 
     try {
       const res = await fetch("/api/chat", {
@@ -213,99 +75,64 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
       });
 
       if (!res.ok) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: "抱歉，服务出现异常，请稍后再试。" };
-          return updated;
+        applyAssistantEvent(assistantId, {
+          type: "error",
+          data: { message: "抱歉，服务出现异常，请稍后再试。" },
         });
-        setIsLoading(false);
         return;
       }
 
       const reader = res.body?.getReader();
       if (!reader) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: "抱歉，无法读取响应。" };
-          return updated;
+        applyAssistantEvent(assistantId, {
+          type: "error",
+          data: { message: "抱歉，无法读取响应。" },
         });
-        setIsLoading(false);
         return;
       }
 
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder("utf-8");
       let buffer = "";
-      let accumulatedContent = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine || !trimmedLine.startsWith("data:")) continue;
-          const data = trimmedLine.slice(5).trim();
-          if (data === "[DONE]") continue;
+        while (buffer.includes("\n\n")) {
+          const eventEnd = buffer.indexOf("\n\n");
+          const eventBlock = buffer.slice(0, eventEnd);
+          buffer = buffer.slice(eventEnd + 2);
+
+          const dataParts: string[] = [];
+          for (const line of eventBlock.split("\n")) {
+            if (line.startsWith("data:")) {
+              dataParts.push(line.slice(5).trim());
+            }
+          }
+
+          if (dataParts.length === 0) continue;
 
           try {
-            const parsed = JSON.parse(data);
+            const parsed = JSON.parse(dataParts.join(""));
+            if (!parsed.type) continue;
 
-            // 新格式：delta（文本增量）
-            if (parsed.type === "delta") {
-              const text = typeof parsed.data === 'string' ? parsed.data : (parsed.data?.content || "");
-              if (text) {
-                accumulatedContent += text;
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
-                  return updated;
-                });
-              }
+            if (parsed.type === "init" && parsed.data?.sessionKey) {
+              sessionKeyRef.current = parsed.data.sessionKey;
+              continue;
             }
-            // 旧格式兼容：answer
-            else if (parsed.type === "answer") {
-              const text = typeof parsed.data === 'string' ? parsed.data : (parsed.data?.content || "");
-              if (text) {
-                accumulatedContent += text;
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
-                  return updated;
-                });
-              }
-            } else if (parsed.type === "sources") {
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { ...updated[updated.length - 1], sources: parsed.data };
-                return updated;
-              });
-            } else if (parsed.type === "error") {
-              if (!accumulatedContent) {
-                accumulatedContent = "抱歉，AI 服务出现错误，请稍后再试。";
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = { role: "assistant", content: accumulatedContent };
-                  return updated;
-                });
-              }
-            }
+
+            applyAssistantEvent(assistantId, parsed);
           } catch {
-            // 忽略解析错误
+            // Ignore malformed SSE event blocks and continue streaming.
           }
         }
       }
     } catch {
-      setMessages((prev) => {
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        if (!lastMsg.content) {
-          updated[updated.length - 1] = { role: "assistant", content: "网络错误，请检查网络连接后重试。" };
-        }
-        return updated;
+      applyAssistantEvent(assistantId, {
+        type: "error",
+        data: { message: "网络错误，请检查网络连接后重试。" },
       });
     } finally {
       setIsLoading(false);
@@ -330,8 +157,10 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
         boxShadow: "var(--island-shadow-press)",
       }}
     >
-      {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-3" style={{ background: "var(--island-yellow)", borderBottom: "3px solid #e6bb2c" }}>
+      <div
+        className="flex items-center justify-between px-4 py-3"
+        style={{ background: "var(--island-yellow)", borderBottom: "3px solid #e6bb2c" }}
+      >
         <h3 className="text-sm font-black text-[var(--island-on-warm)]">知识岛助手</h3>
         <button
           onClick={onClose}
@@ -345,7 +174,6 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
         </button>
       </div>
 
-      {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto px-4 py-3" style={{ background: "var(--island-paper-white)" }}>
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
@@ -353,27 +181,15 @@ export default function ChatPanel({ isOpen, onClose }: ChatPanelProps) {
           </div>
         )}
 
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`mb-3 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[85%] rounded-[20px] px-3 py-2 text-sm leading-relaxed border-2 ${
-                msg.role === "user"
-                  ? "bg-[var(--accent)] text-white border-[#7adfd7] shadow-[0_3px_0_var(--island-teal-deep)]"
-                  : "bg-[var(--island-paper-soft)] text-[var(--text-1)] border-[#e8dcc8] shadow-[0_3px_0_var(--island-sand-deep)]"
-              }`}
-            >
-              <RichMessageContent content={msg.content} sources={msg.sources} />
-              {msg.role === "assistant" && isLoading && idx === messages.length - 1 && !msg.content && (
-                <span className="inline-block animate-pulse text-[var(--text-3)]">思考中...</span>
-              )}
-            </div>
+        {messages.map((message) => (
+          <div key={message.id} className="mb-3">
+            <MessageBubble message={message} assistantLabel="知识助手" />
           </div>
         ))}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区域 */}
       <div className="px-3 py-3" style={{ background: "var(--island-paper-soft)", borderTop: "3px solid #e8dcc8" }}>
         <div className="flex items-center gap-2">
           <input

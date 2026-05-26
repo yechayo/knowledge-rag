@@ -4,10 +4,10 @@ import { createQueryEngine } from "@/lib/agent/chat";
 import { createSSESender, SSE_HEADERS } from "@/lib/agent/stream/sse";
 import { prisma } from "@/lib/prisma";
 import { classifyChatIntent } from "@/lib/rag-chat/intent";
-import { retrieveGrouped, extractSources } from "@/lib/rag-chat/retrieve";
-import { streamDirectAnswer, streamRetrievedAnswer } from "@/lib/rag-chat/generate";
+import { streamDirectAnswer } from "@/lib/rag-chat/generate";
 import { runRagReactAnswer } from "@/lib/rag-chat/react";
 import { buildInputMessagesFromHistory } from "@/lib/rag-chat/messages";
+import type { SourceCitation } from "@/lib/rag-chat/types";
 
 function now() {
   return Date.now();
@@ -41,6 +41,7 @@ export async function POST(req: Request) {
         let modelLatencyMs = 0;
         let answer = "";
         let citations = 0;
+        let sources: SourceCitation[] = [];
         let route = "retrieve_once";
         let intentSource = "fallback";
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
             } else {
               answer = await streamDirectAnswer(query, send, { signal: abortCtrl.signal });
             }
-          } else if (intent.route === "react_retrieve") {
+          } else if (intent.route === "retrieve_once" || intent.route === "react_retrieve") {
             const engine = await createQueryEngine(key, "anonymous", "chat", {
               apiKey: process.env.DEEPSEEK_API_KEY!,
               enableAutoCompact: false,
@@ -80,13 +81,14 @@ export async function POST(req: Request) {
               await engine.addUserMessage(query);
               const inputMessages = await buildInputMessagesFromHistory(await engine.getMessages(), query, 4000);
               const result = await runRagReactAnswer({
+                mode: intent.route,
                 messages: inputMessages,
-                systemPrompt: "你是知识库 ReAct 助手。复杂问题应先调用 search_knowledge_base 检索，再基于结果回答并使用 [[REF:/category/slug#anchor|短标签]] 引用。不要编造链接。",
                 engine,
                 signal: abortCtrl.signal,
                 send,
               });
               answer = result.answer;
+              sources = result.sources;
               citations = result.sources.length;
               if (result.sources.length > 0) send("sources", result.sources);
             } finally {
@@ -94,14 +96,6 @@ export async function POST(req: Request) {
                 try { await engine.release(); } catch {}
               }
             }
-          } else {
-            const retrieveStart = now();
-            const grouped = await retrieveGrouped(intent.normalizedQuery || query);
-            retrieveLatencyMs = now() - retrieveStart;
-            const sources = extractSources(grouped);
-            citations = sources.length;
-            answer = await streamRetrievedAnswer(query, grouped, sources, send, { signal: abortCtrl.signal });
-            if (sources.length > 0) send("sources", sources);
             if (answer && sources.length > 0) {
               try {
                 const report = evaluateCitationQuality(answer, query, sources);
